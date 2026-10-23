@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+dist/
+build/
+.next/
+.turbo/
+
+# Environment and sensitive keys
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.id_rsa
+
+# Workspace cache & XERJ data
+/data/
+/data/workspaces/
+.xerj/
+
+# OS specific
+.DS_Store
+Thumbs.db
