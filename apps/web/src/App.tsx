@@ -33,6 +33,11 @@ import {
   INITIAL_WORKSPACE_SOURCES,
   type CodeSourceItem,
 } from './components/sources/ManageSourcesModal';
+import {
+  WorkspaceTeamModal,
+  INITIAL_WORKSPACE_MEMBERS,
+  type WorkspaceMember,
+} from './components/workspace/WorkspaceTeamModal';
 
 const nodeTypes = {
   codeNode: CustomCodeNode,
@@ -48,7 +53,30 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [sourcesList, setSourcesList] = useState<CodeSourceItem[]>(INITIAL_WORKSPACE_SOURCES);
+  const [membersList, setMembersList] = useState<WorkspaceMember[]>(INITIAL_WORKSPACE_MEMBERS);
+
+  const handleInviteMember = (email: string, roleName: 'admin' | 'member' | 'viewer') => {
+    const newMember: WorkspaceMember = {
+      userId: `user-${Date.now()}`,
+      name: email.split('@')[0],
+      email,
+      roleName,
+      invitedAt: 'Just now',
+    };
+    setMembersList((prev) => [...prev, newMember]);
+  };
+
+  const handleUpdateRole = (userId: string, newRole: 'admin' | 'member' | 'viewer') => {
+    setMembersList((prev) =>
+      prev.map((m) => (m.userId === userId ? { ...m, roleName: newRole } : m))
+    );
+  };
+
+  const handleRemoveMember = (userId: string) => {
+    setMembersList((prev) => prev.filter((m) => m.userId !== userId));
+  };
 
   const { fitView } = useReactFlow();
 
@@ -185,6 +213,25 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
         </div>
 
         <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+          {/* Team Collaboration Trigger */}
+          <button
+            onClick={() => setIsTeamModalOpen(true)}
+            className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white"
+            title="Invite team members and manage permissions"
+          >
+            <div className="flex -space-x-1.5 overflow-hidden">
+              {membersList.slice(0, 3).map((m) => (
+                <div
+                  key={m.userId}
+                  className="w-4 h-4 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 border border-[#080d16] text-[8px] font-bold flex items-center justify-center text-white"
+                >
+                  {m.name[0]}
+                </div>
+              ))}
+            </div>
+            <span className="font-sans text-xs">{membersList.length} Members</span>
+          </button>
+
           <button
             onClick={() => setIsAddSourceOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition-all font-sans font-medium text-xs"
@@ -279,6 +326,17 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
         onOpenAddModal={() => setIsAddSourceOpen(true)}
         onDeleteSource={handleDeleteSource}
         onTriggerReindex={handleTriggerReindex}
+      />
+
+      {/* Workspace Team Collaboration Modal */}
+      <WorkspaceTeamModal
+        isOpen={isTeamModalOpen}
+        onClose={() => setIsTeamModalOpen(false)}
+        workspaceName="vintrix-workspace"
+        members={membersList}
+        onInviteMember={handleInviteMember}
+        onUpdateRole={handleUpdateRole}
+        onRemoveMember={handleRemoveMember}
       />
     </div>
   );
