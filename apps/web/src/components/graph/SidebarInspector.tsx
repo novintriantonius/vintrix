@@ -83,9 +83,16 @@ export function SidebarInspector({
                 {/* Node Title & Kind Card */}
                 <div className="p-4 bg-[#0a101d] rounded-xl border border-white/[0.07] space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-mono uppercase tracking-widest text-sky-400 font-semibold px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/20">
-                      {selectedNode.kind}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-mono uppercase tracking-widest text-sky-400 font-semibold px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/20">
+                        {selectedNode.kind}
+                      </span>
+                      {selectedNode.sourceName && (
+                        <span className="text-[9px] font-mono text-slate-300 px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.08]">
+                          {selectedNode.sourceName}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
                       <CheckCircle size={12} weight="fill" />
                       AST Verified

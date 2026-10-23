@@ -20,8 +20,7 @@ export interface ChatMessage {
 export interface WorkspaceContextOption {
   id: string;
   name: string;
-  repo: string;
-  branch: string;
+  sourcesDescription: string;
   nodesCount: number;
 }
 
@@ -35,23 +34,20 @@ export interface AIModelOption {
 const AVAILABLE_WORKSPACES: WorkspaceContextOption[] = [
   {
     id: 'ws-vintrix-core',
-    name: 'Vintrix Monorepo Core',
-    repo: 'novintriantonius/vintrix',
-    branch: 'main',
-    nodesCount: 6,
+    name: 'Vintrix Ecosystem (Workspace Level)',
+    sourcesDescription: '2 Git Repos (web, api) + 1 SSH Node',
+    nodesCount: 7,
   },
   {
     id: 'ws-auth-service',
-    name: 'Microservice Auth & Vault',
-    repo: 'vintrix/security-vault',
-    branch: 'prod',
-    nodesCount: 4,
+    name: 'Payment & Billing System',
+    sourcesDescription: '1 Git Repo (billing-service) + 1 SFTP Backup',
+    nodesCount: 5,
   },
   {
     id: 'ws-remote-sftp',
-    name: 'Remote SSH/SFTP Node Server',
-    repo: 'ssh://root@192.168.1.100:/var/www',
-    branch: 'release',
+    name: 'Core Infrastructure & DevOps',
+    sourcesDescription: '1 Git Repo (terraform) + 2 SSH Clusters',
     nodesCount: 9,
   },
 ];
@@ -203,10 +199,10 @@ export function ChatboxView() {
                 >
                   <div className="font-medium text-slate-200 truncate">{ws.name}</div>
                   <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
-                    {ws.repo} ({ws.branch})
+                    {ws.sourcesDescription}
                   </div>
                   <div className="text-[10px] text-sky-400 mt-1 font-mono">
-                    {ws.nodesCount} indexed AST nodes
+                    {ws.nodesCount} indexed AST nodes (Cross-Repo)
                   </div>
                 </button>
               ))}

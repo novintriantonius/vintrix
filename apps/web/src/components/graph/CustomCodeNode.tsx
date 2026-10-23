@@ -14,6 +14,8 @@ export type NodeKind = 'controller' | 'service' | 'database' | 'security' | 'gat
 export interface CodeNodeData {
   label: string;
   kind: NodeKind;
+  sourceName?: string; // Repository or Server identifier (e.g., 'frontend-repo', 'backend-repo', 'ssh-prod')
+  sourceType?: 'git' | 'ssh';
   filePath: string;
   lines: string;
   methodCount: number;
@@ -92,7 +94,7 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
       />
 
       <div className="p-3 space-y-2.5">
-        {/* Header: Kind tag + Title + Sync indicator */}
+        {/* Header: Kind tag + Source/Repo badge + Sync indicator */}
         <div className="flex items-center justify-between gap-1.5">
           <div className="flex items-center gap-1.5 min-w-0">
             <span
@@ -101,9 +103,11 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
               <span className={`w-1.5 h-1.5 rounded-full ${config.dotBg}`} />
               {config.label}
             </span>
-            <span className="text-[10px] font-mono text-slate-500 truncate" title={nodeData.filePath}>
-              {nodeData.filePath.split('/').pop()}
-            </span>
+            {nodeData.sourceName && (
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-slate-400 border border-white/[0.06] truncate max-w-[90px]" title={nodeData.sourceName}>
+                {nodeData.sourceName}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1 text-[10px] text-emerald-400/90 font-mono shrink-0">
@@ -122,18 +126,16 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
           </p>
         </div>
 
-        {/* Footer info: Metrics & Tags */}
+        {/* Footer info: Metrics & Path */}
         <div className="flex items-center justify-between pt-2 border-t border-white/[0.06] text-[10px] font-mono text-slate-500">
-          <div className="flex items-center gap-2">
-            <span>{nodeData.methodCount} methods</span>
-            <span>•</span>
-            <span>{nodeData.dependencyCount} deps</span>
+          <div className="flex items-center gap-1.5 truncate max-w-[150px]" title={nodeData.filePath}>
+            <span className="truncate">{nodeData.filePath}</span>
           </div>
-          {nodeData.tags && nodeData.tags[0] && (
-            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/[0.04] text-slate-400 border border-white/[0.06]">
-              #{nodeData.tags[0]}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span>{nodeData.methodCount}m</span>
+            <span>•</span>
+            <span>{nodeData.dependencyCount}d</span>
+          </div>
         </div>
       </div>
 

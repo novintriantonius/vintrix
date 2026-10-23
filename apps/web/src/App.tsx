@@ -40,8 +40,9 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
   const [selectedNodeId, setSelectedNodeId] = useState<string>(INITIAL_WORKSPACE_NODES[0].id);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
+  const [selectedSource, setSelectedSource] = useState<string>('all');
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
-  const [sourcesCount, setSourcesCount] = useState({ git: 1, ssh: 1 });
+  const [sourcesCount, setSourcesCount] = useState({ git: 2, ssh: 1 });
 
   const { fitView } = useReactFlow();
 
@@ -54,23 +55,38 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
     []
   );
 
-  // Filtered nodes based on search & layer kind
+  // Available unique code sources across workspace
+  const availableSources = useMemo(() => {
+    const list: { id: string; label: string }[] = [];
+    nodes.forEach((node) => {
+      const data = node.data as unknown as CodeNodeData;
+      if (data?.sourceName && !list.some((item) => item.id === data.sourceName)) {
+        list.push({ id: data.sourceName, label: data.sourceName });
+      }
+    });
+    return list;
+  }, [nodes]);
+
+  // Filtered nodes based on search, layer kind, & source scope
   const filteredNodes = useMemo(() => {
     return nodes.filter((node) => {
       const data = node.data as unknown as CodeNodeData;
       if (!data) return true;
 
       const matchesKind = selectedKind === 'all' || data.kind === selectedKind;
+      const matchesSource =
+        selectedSource === 'all' || data.sourceName === selectedSource;
       const matchesSearch =
         !searchQuery ||
         data.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
         data.filePath.toLowerCase().includes(searchQuery.toLowerCase()) ||
         data.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (data.sourceName && data.sourceName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (data.tags && data.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
 
-      return matchesKind && matchesSearch;
+      return matchesKind && matchesSource && matchesSearch;
     });
-  }, [nodes, selectedKind, searchQuery]);
+  }, [nodes, selectedKind, selectedSource, searchQuery]);
 
   const allNodeDataList = useMemo(() => {
     return nodes.map((n) => n.data as unknown as CodeNodeData);
@@ -162,6 +178,9 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
                 onSearchChange={setSearchQuery}
                 selectedKind={selectedKind}
                 onKindSelect={setSelectedKind}
+                selectedSource={selectedSource}
+                onSourceSelect={setSelectedSource}
+                availableSources={availableSources}
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}

@@ -2,71 +2,96 @@ import type { Node, Edge } from '@xyflow/react';
 import type { CodeNodeData } from './CustomCodeNode';
 
 export const INITIAL_WORKSPACE_NODES: Node<CodeNodeData>[] = [
-  // Layer 1: API / Controllers (Top)
+  // ── Frontend Repo Source (apps/web) ──────────────────────────────────────────
   {
-    id: 'ctrl-auth',
+    id: 'fe-app',
     type: 'codeNode',
-    position: { x: 180, y: 40 },
+    position: { x: 80, y: 40 },
     data: {
-      label: 'AuthController',
-      kind: 'controller',
-      filePath: 'src/routes/auth.ts',
-      lines: 'L1-L148',
+      label: 'WorkspaceContainer',
+      kind: 'gateway',
+      sourceName: 'vintrix-frontend',
+      sourceType: 'git',
+      filePath: 'src/App.tsx',
+      lines: 'L1-L240',
       methodCount: 4,
-      dependencyCount: 3,
+      dependencyCount: 2,
       status: 'synced',
-      summary: 'Handles user registration, authentication challenges, JWT tokens generation and Elysia type validation.',
-      codeSnippet: `export const authRoutes = new Elysia({ prefix: '/auth' })
-  .post('/login', async ({ body, jwt, set }) => {
-    const user = await authService.authenticate(body.email, body.password);
-    return { token: await jwt.sign({ sub: user.id }) };
-  });`,
-      tags: ['elysia', 'jwt', 'rest-api'],
+      summary: 'Frontend root view container, switches between Knowledge Graph canvas and AI Chatbox copilot.',
+      codeSnippet: `export function WorkspaceContainer() {
+  const [tab, setTab] = useState<'graph' | 'chat'>('graph');
+  return <div className="workspace">{tab === 'graph' ? <Graph /> : <Chat />}</div>;
+}`,
+      tags: ['react', 'ui-core', 'frontend'],
     },
   },
   {
+    id: 'fe-api-client',
+    type: 'codeNode',
+    position: { x: 80, y: 320 },
+    data: {
+      label: 'WorkspaceApiClient',
+      kind: 'service',
+      sourceName: 'vintrix-frontend',
+      sourceType: 'git',
+      filePath: 'src/services/api.ts',
+      lines: 'L1-L95',
+      methodCount: 5,
+      dependencyCount: 1,
+      status: 'synced',
+      summary: 'HTTP client consuming backend REST endpoints with JWT bearer token attach & error retry.',
+      codeSnippet: `export const apiClient = {
+  getWorkspace: (id: string) => fetch(\`/workspaces/\${id}\`),
+  chatCompletion: (payload: ChatPayload) => fetch('/ai/chat/completions', { method: 'POST', body: JSON.stringify(payload) })
+};`,
+      tags: ['fetch', 'api-client', 'frontend'],
+    },
+  },
+
+  // ── Backend Repo Source (apps/api) ───────────────────────────────────────────
+  {
     id: 'ctrl-workspaces',
     type: 'codeNode',
-    position: { x: 620, y: 40 },
+    position: { x: 480, y: 40 },
     data: {
       label: 'WorkspaceRouter',
       kind: 'controller',
+      sourceName: 'vintrix-backend',
+      sourceType: 'git',
       filePath: 'src/routes/workspaces.ts',
       lines: 'L1-L165',
       methodCount: 5,
       dependencyCount: 2,
       status: 'synced',
-      summary: 'REST endpoints for workspace CRUD, team member invitations, and remote repository linkages.',
+      summary: 'REST endpoints for multi-repo workspace CRUD, team collaboration, and code sources linkage.',
       codeSnippet: `export const workspaceRoutes = new Elysia({ prefix: '/workspaces' })
   .get('/', async ({ user }) => {
     return workspaceService.getUserWorkspaces(user.id);
   });`,
-      tags: ['workspace', 'rbac', 'team'],
+      tags: ['workspace', 'rbac', 'team', 'backend'],
     },
   },
-
-  // Layer 2: Core Domain Services & Security Engine (Middle)
   {
-    id: 'srv-auth',
+    id: 'ctrl-auth',
     type: 'codeNode',
-    position: { x: 100, y: 320 },
+    position: { x: 880, y: 40 },
     data: {
-      label: 'AuthService',
-      kind: 'service',
-      filePath: 'src/services/auth.ts',
-      lines: 'L12-L96',
-      methodCount: 3,
+      label: 'AuthController',
+      kind: 'controller',
+      sourceName: 'vintrix-backend',
+      sourceType: 'git',
+      filePath: 'src/routes/auth.ts',
+      lines: 'L1-L148',
+      methodCount: 4,
       dependencyCount: 2,
       status: 'synced',
-      summary: 'Business logic for password verification, session tokens, and workspace membership check.',
-      codeSnippet: `export class AuthService {
-  async authenticate(email: string, pass: string) {
-    const user = await userRepo.findByEmail(email);
-    if (!verifyHash(pass, user.passwordHash)) throw new Error('Invalid credentials');
-    return user;
-  }
-}`,
-      tags: ['service', 'logic'],
+      summary: 'Handles OAuth callback handlers (Google & GitHub) and JWT workspace session tokens.',
+      codeSnippet: `export const authRoutes = new Elysia({ prefix: '/auth' })
+  .get('/callback/github', async ({ query, jwt }) => {
+    const user = await oauthService.handleGithub(query.code);
+    return { token: await jwt.sign({ sub: user.id }) };
+  });`,
+      tags: ['oauth', 'jwt', 'rest-api', 'backend'],
     },
   },
   {
@@ -76,6 +101,8 @@ export const INITIAL_WORKSPACE_NODES: Node<CodeNodeData>[] = [
     data: {
       label: 'CryptoEngine',
       kind: 'security',
+      sourceName: 'vintrix-backend',
+      sourceType: 'git',
       filePath: 'src/services/crypto.ts',
       lines: 'L1-L112',
       methodCount: 4,
@@ -87,93 +114,105 @@ export const INITIAL_WORKSPACE_NODES: Node<CodeNodeData>[] = [
   const iv = crypto.getRandomValues(new Uint8Array(12));
   return JSON.stringify({ salt, iv, ciphertext, tag });
 }`,
-      tags: ['iso-27001', 'aes-256-gcm', 'crypto'],
+      tags: ['iso-27001', 'aes-256-gcm', 'crypto', 'backend'],
     },
   },
+
+  // ── Remote Infrastructure / SSH Source (Production Server) ───────────────────
   {
     id: 'srv-ssh',
     type: 'codeNode',
-    position: { x: 860, y: 320 },
+    position: { x: 880, y: 320 },
     data: {
-      label: 'SSHExplorerService',
+      label: 'SSHClusterService',
       kind: 'service',
+      sourceName: 'prod-cluster (ssh)',
+      sourceType: 'ssh',
       filePath: 'src/services/ssh.ts',
       lines: 'L1-L84',
       methodCount: 2,
       dependencyCount: 1,
       status: 'synced',
-      summary: 'Provides non-blocking SSH key authentication, remote terminal probing, and SFTP file tree traversal.',
+      summary: 'SFTP file tree crawler and remote command execution runner for deployed production services.',
       codeSnippet: `export async function listRemoteDirectory(conn: SSHConfig, path: string) {
   const client = new Client();
   return client.sftp().readdir(path);
 }`,
-      tags: ['sftp', 'ssh2', 'remote-fs'],
+      tags: ['sftp', 'ssh2', 'remote-fs', 'infra'],
     },
   },
 
-  // Layer 3: Database & Persistence Layer (Bottom)
+  // ── Database & Persistence Layer (Shared Workspace Core) ─────────────────────
   {
     id: 'repo-db',
     type: 'codeNode',
-    position: { x: 380, y: 600 },
+    position: { x: 480, y: 600 },
     data: {
       label: 'DatabaseSchema',
       kind: 'database',
+      sourceName: 'vintrix-backend',
+      sourceType: 'git',
       filePath: 'src/db/schema.ts',
       lines: 'L1-L210',
       methodCount: 11,
       dependencyCount: 0,
       status: 'synced',
-      summary: 'PostgreSQL schema definitions via Drizzle ORM: workspaces, roles, code_sources, ssh_source_details, and ai_endpoints.',
+      summary: 'PostgreSQL schema definitions via Drizzle ORM: workspaces, code_sources, knowledge_nodes, and AI sessions.',
       codeSnippet: `export const workspaces = pgTable('workspaces', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
   ownerId: uuid('owner_id').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });`,
-      tags: ['postgres', 'drizzle-orm'],
+      tags: ['postgres', 'drizzle-orm', 'database'],
     },
   },
 ];
 
 export const INITIAL_WORKSPACE_EDGES: Edge[] = [
+  // Cross-Repo Link: Frontend UI -> Frontend API Client -> Backend WorkspaceRouter
   {
-    id: 'e-ctrl-auth-srv',
-    source: 'ctrl-auth',
-    target: 'srv-auth',
+    id: 'e-fe-app-client',
+    source: 'fe-app',
+    target: 'fe-api-client',
     animated: true,
-    style: { stroke: '#38bdf8', strokeWidth: 1.5, strokeDasharray: '4 4' },
+    style: { stroke: '#a78bfa', strokeWidth: 1.5 },
   },
   {
-    id: 'e-ctrl-ws-srv-ssh',
+    id: 'e-client-backend',
+    source: 'fe-api-client',
+    target: 'ctrl-workspaces',
+    animated: true,
+    style: { stroke: '#38bdf8', strokeWidth: 1.5, strokeDasharray: '4,4' },
+  },
+
+  // Backend Internal Linkages
+  {
+    id: 'e-workspaces-crypto',
+    source: 'ctrl-workspaces',
+    target: 'sec-crypto',
+    animated: true,
+    style: { stroke: '#38bdf8', strokeWidth: 1.5 },
+  },
+  {
+    id: 'e-crypto-db',
+    source: 'sec-crypto',
+    target: 'repo-db',
+    animated: true,
+    style: { stroke: '#f43f5e', strokeWidth: 1.5 },
+  },
+  {
+    id: 'e-workspaces-ssh',
     source: 'ctrl-workspaces',
     target: 'srv-ssh',
     animated: true,
-    style: { stroke: '#38bdf8', strokeWidth: 1.5, strokeDasharray: '4 4' },
+    style: { stroke: '#38bdf8', strokeWidth: 1.5 },
   },
   {
-    id: 'e-srv-auth-sec',
-    source: 'srv-auth',
-    target: 'sec-crypto',
-    style: { stroke: '#f43f5e', strokeWidth: 1.5 },
-  },
-  {
-    id: 'e-srv-ssh-sec',
-    source: 'srv-ssh',
-    target: 'sec-crypto',
+    id: 'e-auth-db',
+    source: 'ctrl-auth',
+    target: 'repo-db',
     animated: true,
-    style: { stroke: '#f43f5e', strokeWidth: 1.5 },
-  },
-  {
-    id: 'e-srv-auth-db',
-    source: 'srv-auth',
-    target: 'repo-db',
-    style: { stroke: '#34d399', strokeWidth: 1.5 },
-  },
-  {
-    id: 'e-ctrl-ws-db',
-    source: 'ctrl-workspaces',
-    target: 'repo-db',
-    style: { stroke: '#fbbf24', strokeWidth: 1.5 },
+    style: { stroke: '#38bdf8', strokeWidth: 1.5 },
   },
 ];
