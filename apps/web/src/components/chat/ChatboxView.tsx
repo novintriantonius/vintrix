@@ -99,6 +99,46 @@ export function ChatboxView() {
   const [isCustomAIOpen, setIsCustomAIOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load dynamic models from configured AI endpoints
+  useEffect(() => {
+    aiApi
+      .listEndpoints(selectedWorkspaceId)
+      .then(async (endpoints) => {
+        if (endpoints && endpoints.length > 0) {
+          const modelPromises = endpoints.map((ep) =>
+            aiApi.listModels(ep.id).then((models) => ({
+              endpoint: ep,
+              models,
+            }))
+          );
+          const results = await Promise.all(modelPromises);
+          const apiModels: AIModelOption[] = [];
+          results.forEach(({ endpoint, models }) => {
+            models.forEach((m) => {
+              apiModels.push({
+                id: m.id,
+                modelId: m.modelId,
+                displayName: m.displayName || m.modelId,
+                provider: endpoint.name,
+              });
+            });
+          });
+
+          if (apiModels.length > 0) {
+            setModelsList((prev) => {
+              // merge without duplicates
+              const existingIds = new Set(prev.map((p) => p.modelId));
+              const fresh = apiModels.filter((m) => !existingIds.has(m.modelId));
+              return [...fresh, ...prev];
+            });
+          }
+        }
+      })
+      .catch(() => {
+        // Keep defaults
+      });
+  }, [selectedWorkspaceId]);
+
   // Fetch workspaces dynamically from backend
   useEffect(() => {
     workspacesApi
@@ -148,7 +188,7 @@ export function ChatboxView() {
       const resData = await aiApi.chat({
         sessionId: '00000000-0000-0000-0000-000000000001',
         workspaceId: selectedWorkspaceId,
-        modelId: selectedModelId,
+        modelId: selectedModel?.modelId || selectedModelId,
         message: userText,
       });
 
@@ -163,12 +203,13 @@ export function ChatboxView() {
         createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, aiMsg]);
-    } catch {
-      // Mock architect intelligence response when backend local standalone
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // Fallback architect response with notice
       const fallbackMsg: ChatMessage = {
         id: `ai-mock-${Date.now()}`,
         role: 'assistant',
-        content: `**[Architecture Analysis: ${selectedWorkspace?.name}]**\n\nThe requested module coordinates across the persistence and security boundary. Per XERJ AST indexer data:\n- Credentials are encrypted at rest with \`AES-256-GCM\` (PBKDF2 SHA-256, 310k iterations).\n- Dependency chain: \`WorkspaceRouter\` -> \`CryptoEngine\` -> PostgreSQL database schema.\n\nWould you like to inspect this node directly in the Knowledge Graph canvas?`,
+        content: `**[Architecture Analysis: ${selectedWorkspace?.name}]**\n\n${errMsg.includes('Model') || errMsg.includes('Failed to fetch') ? `*(Note: ${errMsg})*\n\n` : ''}The requested module coordinates across the persistence and security boundary. Per XERJ AST indexer data:\n- Credentials are encrypted at rest with \`AES-256-GCM\` (PBKDF2 SHA-256, 310k iterations).\n- Dependency chain: \`WorkspaceRouter\` -> \`CryptoEngine\` -> PostgreSQL database schema.\n\nWould you like to inspect this node directly in the Knowledge Graph canvas?`,
         createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, fallbackMsg]);

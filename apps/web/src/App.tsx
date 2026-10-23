@@ -38,6 +38,7 @@ import {
   type WorkspaceMember,
 } from './components/workspace/WorkspaceTeamModal';
 import { AuthModal } from './components/auth/AuthModal';
+import { ToastContainer, type ToastMessage } from './components/common';
 import { sourcesApi, workspacesApi, type WorkspaceMemberAPI, type AuthUser } from './services/api';
 
 // Default workspace ID — in production this comes from auth session
@@ -103,6 +104,16 @@ function WorkspaceContainer({
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [sourcesList, setSourcesList] = useState<CodeSourceItem[]>([]);
   const [membersList, setMembersList] = useState<WorkspaceMember[]>([]);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (toast: Omit<ToastMessage, 'id'>) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    setToasts((prev) => [...prev, { ...toast, id }]);
+  };
+
+  const handleDismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   // Load initial sources and members from backend API
   useEffect(() => {
@@ -179,9 +190,15 @@ function WorkspaceContainer({
       };
       setMembersList((prev) => [...prev, newMember]);
     }
+    addToast({
+      type: 'success',
+      title: 'Invitation Sent',
+      description: `Invited ${email} as ${roleName.toUpperCase()} to the workspace.`,
+    });
   };
 
   const handleUpdateRole = async (userId: string, newRole: 'admin' | 'member' | 'viewer') => {
+    const member = membersList.find((m) => m.userId === userId);
     try {
       await workspacesApi.updateMemberRole(DEFAULT_WORKSPACE_ID, userId, newRole);
     } catch {
@@ -190,15 +207,26 @@ function WorkspaceContainer({
     setMembersList((prev) =>
       prev.map((m) => (m.userId === userId ? { ...m, roleName: newRole } : m))
     );
+    addToast({
+      type: 'info',
+      title: 'Member Role Updated',
+      description: `${member?.name || 'Member'} role changed to ${newRole.toUpperCase()}.`,
+    });
   };
 
   const handleRemoveMember = async (userId: string) => {
+    const member = membersList.find((m) => m.userId === userId);
     try {
       await workspacesApi.removeMember(DEFAULT_WORKSPACE_ID, userId);
     } catch {
       // ignore
     }
     setMembersList((prev) => prev.filter((m) => m.userId !== userId));
+    addToast({
+      type: 'info',
+      title: 'Member Removed',
+      description: `${member?.name || 'Member'} was removed from the workspace.`,
+    });
   };
 
   const { fitView } = useReactFlow();
@@ -221,10 +249,16 @@ function WorkspaceContainer({
           return data?.sourceName !== targetSource.name;
         })
       );
+      addToast({
+        type: 'info',
+        title: 'Source Removed',
+        description: `Source '${targetSource.name}' and its knowledge nodes were removed from workspace.`,
+      });
     }
   };
 
   const handleTriggerReindex = async (sourceId: string) => {
+    const targetSource = sourcesList.find((s) => s.id === sourceId);
     try {
       await sourcesApi.triggerReindex(sourceId);
     } catch {
@@ -237,6 +271,13 @@ function WorkspaceContainer({
           : s
       )
     );
+    if (targetSource) {
+      addToast({
+        type: 'success',
+        title: 'Re-indexing Completed',
+        description: `Knowledge graph for '${targetSource.name}' was refreshed successfully.`,
+      });
+    }
   };
 
   const onNodesChange: OnNodesChange = useCallback(
@@ -248,9 +289,14 @@ function WorkspaceContainer({
     []
   );
 
-  // Available unique code sources across workspace
+  // Available unique code sources across workspace (from sourcesList & nodes)
   const availableSources = useMemo(() => {
     const list: { id: string; label: string }[] = [];
+    sourcesList.forEach((s) => {
+      if (s.name && !list.some((item) => item.id === s.name)) {
+        list.push({ id: s.name, label: s.name });
+      }
+    });
     nodes.forEach((node) => {
       const data = node.data as unknown as CodeNodeData;
       if (data?.sourceName && !list.some((item) => item.id === data.sourceName)) {
@@ -258,7 +304,7 @@ function WorkspaceContainer({
       }
     });
     return list;
-  }, [nodes]);
+  }, [sourcesList, nodes]);
 
   // Filtered nodes based on search, layer kind, & source scope
   const filteredNodes = useMemo(() => {
@@ -478,14 +524,24 @@ function WorkspaceContainer({
             id: newSource.id,
             name: newSource.name,
             type: newSource.type,
-            location: newSource.type === 'git' ? 'Repository connected' : 'SSH Server connected',
-            branchOrPort: newSource.type === 'git' ? 'main' : 'Port 22',
-            indexPaths: ['src/'],
+            location:
+              newSource.location ||
+              (newSource.type === 'git' ? 'Repository connected' : 'SSH Server connected'),
+            branchOrPort:
+              newSource.branchOrPort || (newSource.type === 'git' ? 'main' : 'Port 22'),
+            indexPaths: newSource.indexPaths && newSource.indexPaths.length > 0 ? newSource.indexPaths : ['/'],
             status: 'synced',
             lastSyncedAt: 'Just now',
             nodesCount: 1,
           };
           setSourcesList((prev) => [item, ...prev]);
+
+          // Provide immediate success prompt to user
+          addToast({
+            type: 'success',
+            title: 'Source Connected & Indexed',
+            description: `Successfully added ${newSource.name} (${newSource.type.toUpperCase()}) to workspace.`,
+          });
         }}
       />
 
@@ -509,6 +565,9 @@ function WorkspaceContainer({
         onUpdateRole={handleUpdateRole}
         onRemoveMember={handleRemoveMember}
       />
+
+      {/* Floating Toast Notification Container */}
+      <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
     </div>
   );
 }

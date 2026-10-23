@@ -17,7 +17,14 @@ interface AddSourceModalProps {
   isOpen: boolean;
   onClose: () => void;
   workspaceId: string;
-  onSourceAdded: (source: { id: string; name: string; type: 'git' | 'ssh' }) => void;
+  onSourceAdded: (source: {
+    id: string;
+    name: string;
+    type: 'git' | 'ssh';
+    location?: string;
+    branchOrPort?: string;
+    indexPaths?: string[];
+  }) => void;
 }
 
 export function AddSourceModal({
@@ -124,10 +131,17 @@ export function AddSourceModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setTestResult(null);
     try {
       let result: { id: string; name: string; type: string };
+      let location = '';
+      let branchOrPort = '';
+      let targetPaths: string[] = [];
+
       if (activeType === 'git') {
-        const targetPaths = isFullRepoIndex ? [] : gitPathList;
+        targetPaths = isFullRepoIndex ? [] : gitPathList;
+        location = gitRepoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '');
+        branchOrPort = gitBranch || 'main';
         result = await sourcesApi.addGit({
           workspaceId,
           name: gitName || 'Git Repo',
@@ -137,6 +151,9 @@ export function AddSourceModal({
           indexPaths: targetPaths,
         });
       } else {
+        targetPaths = sshPathList;
+        location = `${sshUsername}@${sshHost}`;
+        branchOrPort = `Port ${sshPort}`;
         result = await sourcesApi.addSSH({
           workspaceId,
           name: sshName || 'SSH Server',
@@ -149,7 +166,29 @@ export function AddSourceModal({
           indexPaths: sshPathList,
         });
       }
-      onSourceAdded({ id: result.id, name: result.name, type: activeType });
+
+      onSourceAdded({
+        id: result.id,
+        name: result.name || (activeType === 'git' ? gitName : sshName),
+        type: activeType,
+        location,
+        branchOrPort,
+        indexPaths: targetPaths,
+      });
+
+      // Reset form states
+      setGitName('');
+      setGitRepoUrl('');
+      setGitToken('');
+      setGitPathList([]);
+      setSshName('');
+      setSshHost('');
+      setSshPassword('');
+      setSshPrivateKey('');
+      setSshPathList([]);
+      setIsSSHConnected(false);
+      setTestResult(null);
+
       onClose();
     } catch (err: unknown) {
       setTestResult({

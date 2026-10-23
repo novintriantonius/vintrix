@@ -124,15 +124,26 @@ export const aiRouter = new Elysia({ prefix: '/ai' })
       const { sessionId, workspaceId, modelId, message } = body;
 
       // 1. Resolve model & endpoint
-      const [model] = await db
+      let model = await db
         .select()
         .from(aiModels)
         .where(eq(aiModels.id, modelId))
-        .limit(1);
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      // Allow fallback lookup by modelId string if UUID query didn't match directly
+      if (!model) {
+        model = await db
+          .select()
+          .from(aiModels)
+          .where(eq(aiModels.modelId, modelId))
+          .limit(1)
+          .then((rows) => rows[0]);
+      }
 
       if (!model) {
         set.status = 404;
-        return { error: 'Model not found' };
+        return { error: `Model '${modelId}' not found. Please register this model or an endpoint first.` };
       }
 
       const [endpoint] = await db
@@ -245,9 +256,9 @@ export const aiRouter = new Elysia({ prefix: '/ai' })
     },
     {
       body: t.Object({
-        sessionId: t.String({ format: 'uuid' }),
+        sessionId: t.String(),
         workspaceId: t.String({ format: 'uuid' }),
-        modelId: t.String({ format: 'uuid' }),
+        modelId: t.String(),
         message: t.String({ minLength: 1 }),
       }),
     },

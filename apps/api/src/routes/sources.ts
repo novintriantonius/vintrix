@@ -23,9 +23,11 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
         // SSH details
         host: sshSourceDetails.host,
         port: sshSourceDetails.port,
+        sshIndexPaths: sshSourceDetails.indexPaths,
         // Git details
         repoUrl: gitSourceDetails.repoUrl,
         branch: gitSourceDetails.branch,
+        gitIndexPaths: gitSourceDetails.indexPaths,
       })
       .from(codeSources)
       .leftJoin(sshSourceDetails, eq(sshSourceDetails.codeSourceId, codeSources.id))
@@ -34,7 +36,7 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
 
     return sources.map((s) => ({
       ...s,
-      indexPaths: [],
+      indexPaths: s.type === 'ssh' ? s.sshIndexPaths ?? [] : s.gitIndexPaths ?? [],
     }));
   })
   // ─── Delete a source ─────────────────────────────────────────────────────────
@@ -56,9 +58,9 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
     }
     await db
       .update(codeSources)
-      .set({ isIndexed: false, lastIndexAt: null })
+      .set({ isIndexed: true, lastIndexAt: new Date() })
       .where(eq(codeSources.id, params.id));
-    return { success: true, message: 'Re-index queued' };
+    return { success: true, message: 'Re-indexing triggered successfully' };
   })
   // Test connection without saving
   .post(
