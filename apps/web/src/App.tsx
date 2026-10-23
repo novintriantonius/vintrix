@@ -37,7 +37,8 @@ import {
   WorkspaceTeamModal,
   type WorkspaceMember,
 } from './components/workspace/WorkspaceTeamModal';
-import { sourcesApi, workspacesApi, type WorkspaceMemberAPI } from './services/api';
+import { AuthModal } from './components/auth/AuthModal';
+import { sourcesApi, workspacesApi, type WorkspaceMemberAPI, type AuthUser } from './services/api';
 
 // Default workspace ID — in production this comes from auth session
 const DEFAULT_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
@@ -81,7 +82,13 @@ function memberApiToLocal(m: WorkspaceMemberAPI): WorkspaceMember {
   };
 }
 
-function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }) {
+function WorkspaceContainer({
+  onBackToLanding,
+  user,
+}: {
+  onBackToLanding: () => void;
+  user: AuthUser | null;
+}) {
   const [workspaceTab, setWorkspaceTab] = useState<'graph' | 'chat'>('graph');
   const [nodes, setNodes] = useState<Node[]>(INITIAL_WORKSPACE_NODES as unknown as Node[]);
   const [edges, setEdges] = useState<Edge[]>(INITIAL_WORKSPACE_EDGES);
@@ -380,6 +387,17 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
             <Layers size={13} /> Nodes: {nodes.length}
           </span>
 
+          {user && (
+            <div className="flex items-center gap-1.5 pl-1.5 border-l border-white/[0.08]">
+              <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-sky-400 to-indigo-500 text-[10px] font-bold text-slate-950 flex items-center justify-center shrink-0">
+                {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
+              </div>
+              <span className="hidden lg:inline text-[11px] text-slate-300 font-sans truncate max-w-[90px]">
+                {user.displayName || user.email}
+              </span>
+            </div>
+          )}
+
           {/* Mobile Inspector Toggle */}
           {workspaceTab === 'graph' && (
             <button
@@ -497,11 +515,28 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
 
 export default function App() {
   const [view, setView] = useState<'landing' | 'app'>('landing');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    try {
+      const stored = localStorage.getItem('vintrix_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleAuthSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    setView('app');
+  };
 
   if (view === 'landing') {
     return (
       <div className="min-h-screen bg-[#050a10] text-[#f8fafc] selection:bg-brand-500/20 selection:text-brand-300">
-        <Nav onOpenApp={() => setView('app')} />
+        <Nav
+          onOpenApp={() => setView('app')}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+        />
         <main>
           <Hero onOpenApp={() => setView('app')} />
           <FeaturesSection />
@@ -510,13 +545,19 @@ export default function App() {
           <CtaSection onOpenApp={() => setView('app')} />
         </main>
         <Footer />
+
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          onSuccess={handleAuthSuccess}
+        />
       </div>
     );
   }
 
   return (
     <ReactFlowProvider>
-      <WorkspaceContainer onBackToLanding={() => setView('landing')} />
+      <WorkspaceContainer onBackToLanding={() => setView('landing')} user={currentUser} />
     </ReactFlowProvider>
   );
 }

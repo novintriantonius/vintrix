@@ -211,3 +211,37 @@ export const aiApi = {
     { method: 'POST', body: JSON.stringify(body) },
   ),
 };
+
+// ─── Passwordless OAuth API ───────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
+  provider: 'google' | 'github';
+}
+
+export const authApi = {
+  getProviders: () =>
+    request<{ providers: Array<{ id: string; name: string; authUrl: string; enabled: boolean }> }>(
+      '/auth/providers'
+    ),
+
+  signInWithOAuth: (body: {
+    provider: 'google' | 'github';
+    code?: string;
+    email?: string;
+    name?: string;
+    avatarUrl?: string;
+  }) =>
+    request<{ token: string; user: AuthUser }>('/auth/callback', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getCurrentUser: (token: string) =>
+    request<{ authenticated: boolean; user: AuthUser }>('/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+};

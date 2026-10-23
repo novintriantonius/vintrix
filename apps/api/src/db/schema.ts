@@ -12,8 +12,11 @@ export const roles = pgTable('roles', {
 export const users = pgTable('users', {
   id:           uuid('id').primaryKey().defaultRandom(),
   email:        text('email').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
+  passwordHash: text('password_hash'), // Nullable for passwordless OAuth (Google / GitHub)
   displayName:  text('display_name'),
+  avatarUrl:    text('avatar_url'),
+  provider:     text('provider').default('google').notNull(), // 'google' | 'github'
+  providerId:   text('provider_id'),
   createdAt:    timestamp('created_at').defaultNow().notNull(),
   updatedAt:    timestamp('updated_at').defaultNow().notNull(),
 });

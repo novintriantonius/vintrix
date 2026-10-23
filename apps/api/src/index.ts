@@ -4,6 +4,7 @@ import { swagger } from '@elysiajs/swagger';
 import { workspacesRouter } from './routes/workspaces';
 import { sourcesRouter } from './routes/sources';
 import { aiRouter } from './routes/ai';
+import { authRouter } from './routes/auth';
 
 const app = new Elysia()
   .use(cors())
@@ -29,6 +30,7 @@ const app = new Elysia()
   }))
   .group('/api/v1', (group) =>
     group
+      .use(authRouter)
       .use(workspacesRouter)
       .use(sourcesRouter)
       .use(aiRouter)

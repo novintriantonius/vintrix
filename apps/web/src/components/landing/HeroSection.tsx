@@ -3,9 +3,10 @@ import { ArrowRight, GitBranch, Graph } from '@phosphor-icons/react';
 
 interface NavProps {
   onOpenApp?: () => void;
+  onOpenAuth?: () => void;
 }
 
-export function Nav({ onOpenApp }: NavProps) {
+export function Nav({ onOpenApp, onOpenAuth }: NavProps) {
   const reduce = useReducedMotion();
   return (
     <motion.header
@@ -27,7 +28,7 @@ export function Nav({ onOpenApp }: NavProps) {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={onOpenApp}
+            onClick={onOpenAuth || onOpenApp}
             className="hidden sm:block text-sm text-slate-400 hover:text-slate-200 transition-colors duration-150"
           >
             Sign in
