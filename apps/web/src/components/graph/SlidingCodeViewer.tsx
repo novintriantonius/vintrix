@@ -35,34 +35,34 @@ export function SlidingCodeViewer({ node, isOpen, onClose }: SlidingCodeViewerPr
   return (
     <div
       className={`absolute left-0 right-0 bottom-0 z-30 transition-all duration-300 ease-out flex flex-col bg-[#050912]/95 backdrop-blur-xl border-t border-white/[0.1] shadow-2xl ${
-        isFullScreen ? 'top-0' : 'h-[320px]'
+        isFullScreen ? 'top-0' : 'h-[260px] sm:h-[320px]'
       }`}
     >
       {/* Drawer Header */}
-      <div className="h-11 px-4 border-b border-white/[0.08] flex items-center justify-between shrink-0 bg-[#070c16]/80 select-none">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+      <div className="h-11 px-2.5 sm:px-4 border-b border-white/[0.08] flex items-center justify-between shrink-0 bg-[#070c16]/80 select-none">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <Code size={15} className="text-sky-400" />
-            <span className="text-xs font-mono font-semibold text-slate-100">{node.label}</span>
+            <span className="text-xs font-mono font-semibold text-slate-100 truncate max-w-[90px] sm:max-w-none">{node.label}</span>
           </div>
-          <div className="w-px h-3 bg-white/[0.1]" />
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
-            <FileText size={12} className="text-slate-500" />
-            <span>{node.filePath}</span>
+          <div className="w-px h-3 bg-white/[0.1] shrink-0 hidden sm:block" />
+          <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400 min-w-0">
+            <FileText size={12} className="text-slate-500 shrink-0" />
+            <span className="truncate max-w-[100px] sm:max-w-none">{node.filePath}</span>
           </div>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 uppercase">
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 uppercase shrink-0 hidden xs:inline">
             {node.kind}
           </span>
           {node.sourceName && (
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-slate-300 border border-white/[0.06]">
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-slate-300 border border-white/[0.06] shrink-0 hidden md:inline">
               {node.sourceName}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* ISO 27001 Zero-leak badge */}
-          <div className="hidden sm:flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/40">
+          <div className="hidden md:flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/40">
             <ShieldCheck size={12} />
             <span>AST Sandboxed</span>
           </div>
@@ -70,11 +70,11 @@ export function SlidingCodeViewer({ node, isOpen, onClose }: SlidingCodeViewerPr
           {/* Copy Snippet */}
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] px-2.5 py-1 rounded-md border border-white/[0.08] transition-colors"
+            className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] px-2 sm:px-2.5 py-1 rounded-md border border-white/[0.08] transition-colors"
             title="Copy code snippet to clipboard"
           >
             {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-            <span>{isCopied ? 'Copied' : 'Copy'}</span>
+            <span className="hidden sm:inline">{isCopied ? 'Copied' : 'Copy'}</span>
           </button>
 
           {/* Toggle Full Screen / Half Screen */}

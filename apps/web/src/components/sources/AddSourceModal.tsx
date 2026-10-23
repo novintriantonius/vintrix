@@ -113,10 +113,10 @@ export function AddSourceModal({ isOpen, onClose, workspaceId, onSourceAdded }: 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#080d16] border border-white/[0.08] rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[#080d16] border border-white/[0.08] rounded-2xl w-full max-w-xl max-h-[92vh] overflow-hidden shadow-2xl flex flex-col">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-4 border-b border-white/[0.08] flex items-center justify-between shrink-0">
           <div>
             <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
               <FolderOpen size={18} className="text-sky-400" />
@@ -135,7 +135,7 @@ export function AddSourceModal({ isOpen, onClose, workspaceId, onSourceAdded }: 
         </div>
 
         {/* Source Type Selector */}
-        <div className="px-6 pt-4 pb-2">
+        <div className="px-4 sm:px-6 pt-4 pb-2 shrink-0">
           <div className="grid grid-cols-2 gap-2 p-1 bg-[#050912] rounded-xl border border-white/[0.06]">
             <button
               type="button"
@@ -143,14 +143,15 @@ export function AddSourceModal({ isOpen, onClose, workspaceId, onSourceAdded }: 
                 setActiveType('git');
                 setTestResult(null);
               }}
-              className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-all ${
+              className={`flex items-center justify-center gap-1.5 sm:gap-2 py-2 rounded-lg text-xs font-medium transition-all ${
                 activeType === 'git'
                   ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <GitBranch size={15} />
-              <span>Git Repository (GitHub / GitLab)</span>
+              <span className="hidden sm:inline">Git Repository (GitHub / GitLab)</span>
+              <span className="sm:hidden">Git Repo</span>
             </button>
             <button
               type="button"
@@ -158,20 +159,21 @@ export function AddSourceModal({ isOpen, onClose, workspaceId, onSourceAdded }: 
                 setActiveType('ssh');
                 setTestResult(null);
               }}
-              className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-all ${
+              className={`flex items-center justify-center gap-1.5 sm:gap-2 py-2 rounded-lg text-xs font-medium transition-all ${
                 activeType === 'ssh'
                   ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Terminal size={15} />
-              <span>SSH / SFTP Remote Server</span>
+              <span className="hidden sm:inline">SSH / SFTP Remote Server</span>
+              <span className="sm:hidden">SSH Server</span>
             </button>
           </div>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4 overflow-y-auto max-h-[60vh]">
+        <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-4 space-y-4 overflow-y-auto max-h-[60vh]">
           {activeType === 'git' ? (
             <>
               <div>

@@ -13,7 +13,7 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Layers, Box, ArrowLeft, GitFork, MessageSquareCode, Share2 } from 'lucide-react';
+import { Layers, Box, GitFork, MessageSquareCode, Share2, Info } from 'lucide-react';
 import { Nav, Hero } from './components/landing/HeroSection';
 import {
   FeaturesSection,
@@ -87,6 +87,7 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
   const [edges, setEdges] = useState<Edge[]>(INITIAL_WORKSPACE_EDGES);
   const [selectedNodeId, setSelectedNodeId] = useState<string>(INITIAL_WORKSPACE_NODES[0].id);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
+  const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
@@ -292,89 +293,103 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
   return (
     <div className="flex h-screen w-screen bg-[#050a10] text-[#e0e0e0] font-sans overflow-hidden">
       {/* Top Header */}
-      <header className="absolute top-0 left-0 right-0 h-12 bg-[#070b12] border-b border-white/[0.08] flex items-center justify-between px-4 z-30">
-        <div className="flex items-center gap-3">
+      <header className="absolute top-0 left-0 right-0 h-12 bg-[#070b12] border-b border-white/[0.08] flex items-center justify-between px-2 sm:px-4 z-30">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
           <button
             onClick={onBackToLanding}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-100 bg-white/[0.04] hover:bg-white/[0.08] px-2.5 py-1 rounded-md border border-white/[0.06] transition-colors"
+            className="flex items-center gap-1.5 font-semibold text-xs text-slate-100 hover:text-white transition-colors p-1 -ml-1 rounded-lg hover:bg-white/[0.04] shrink-0 group"
+            title="Vintrix - Back to Landing"
           >
-            <ArrowLeft size={13} /> Back to Landing
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center shadow-sm shadow-sky-500/20 group-hover:scale-105 transition-transform shrink-0">
+              <Box size={14} className="text-slate-950" />
+            </div>
+            <span className="font-bold text-sm tracking-tight text-white">Vintrix</span>
           </button>
-          <div className="w-px h-3.5 bg-white/[0.08]" />
-          <div className="flex items-center gap-2 font-semibold text-xs text-slate-100">
-            <Box size={16} className="text-sky-400" />
-            <span>Vintrix Workspace</span>
-            <span className="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.06]">
-              vintrix-monorepo (main)
-            </span>
-          </div>
+          <span className="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/[0.06] hidden md:inline truncate max-w-[120px]">
+            vintrix-monorepo
+          </span>
+
+          <div className="w-px h-3.5 bg-white/[0.08] shrink-0 hidden sm:block" />
 
           {/* Mode Switcher: Knowledge Graph vs AI Chatbox */}
-          <div className="ml-2 flex items-center bg-[#0d1422] border border-white/[0.06] p-0.5 rounded-lg">
+          <div className="flex items-center bg-[#0d1422] border border-white/[0.06] p-0.5 rounded-lg shrink-0">
             <button
               onClick={() => setWorkspaceTab('graph')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 workspaceTab === 'graph'
                   ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Share2 size={12} />
-              <span>Knowledge Graph</span>
+              <span className="hidden sm:inline">Graph</span>
             </button>
             <button
               onClick={() => setWorkspaceTab('chat')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 workspaceTab === 'chat'
                   ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <MessageSquareCode size={12} />
-              <span>AI Chatbox</span>
+              <span className="hidden sm:inline">Chat</span>
             </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 text-xs font-mono text-slate-400 shrink-0">
           {/* Team Collaboration Trigger */}
           <button
             onClick={() => setIsTeamModalOpen(true)}
-            className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white shrink-0"
             title="Invite team members and manage permissions"
           >
             <div className="flex -space-x-1.5 overflow-hidden">
               {membersList.slice(0, 3).map((m) => (
                 <div
                   key={m.userId}
-                  className="w-4 h-4 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 border border-[#080d16] text-[8px] font-bold flex items-center justify-center text-white"
+                  className="w-4 h-4 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 border border-[#080d16] text-[8px] font-bold flex items-center justify-center text-white shrink-0"
                 >
                   {m.name[0]}
                 </div>
               ))}
             </div>
-            <span className="font-sans text-xs">{membersList.length} Members</span>
+            <span className="font-sans text-xs hidden sm:inline">{membersList.length} Members</span>
           </button>
 
           <button
             onClick={() => setIsAddSourceOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition-all font-sans font-medium text-xs"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition-all font-sans font-medium text-xs shrink-0"
+            title="Connect Git repository or SSH/SFTP server"
           >
             <GitFork size={13} />
-            <span>+ Add Source</span>
+            <span className="hidden sm:inline">+ Add Source</span>
           </button>
           <button
             onClick={() => setIsManageSourcesOpen(true)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-sky-300"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-sky-300 shrink-0"
             title="Click to manage, re-index, or delete connected sources"
           >
-            <span>
+            <span className="hidden sm:inline">
               Sources: {gitSourcesCount} Git, {sshSourcesCount} SSH
             </span>
+            <span className="sm:hidden text-[11px]">{sourcesList.length} src</span>
           </button>
-          <span className="flex items-center gap-1.5 text-slate-400">
+          <span className="hidden md:flex items-center gap-1.5 text-slate-400">
             <Layers size={13} /> Nodes: {nodes.length}
           </span>
+
+          {/* Mobile Inspector Toggle */}
+          {workspaceTab === 'graph' && (
+            <button
+              onClick={() => setIsMobileInspectorOpen((prev) => !prev)}
+              className="flex md:hidden items-center gap-1 p-1.5 text-slate-300 hover:text-white bg-white/[0.05] border border-white/[0.08] rounded-md transition-colors shrink-0"
+              title="Toggle AST Node Inspector"
+            >
+              <Info size={14} className="text-sky-400" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -426,6 +441,8 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
               selectedNode={selectedNodeData}
               onSelectNodeByPath={handleSelectNodeByPath}
               allNodes={allNodeDataList}
+              isOpenMobile={isMobileInspectorOpen}
+              onCloseMobile={() => setIsMobileInspectorOpen(false)}
             />
           </>
         ) : (

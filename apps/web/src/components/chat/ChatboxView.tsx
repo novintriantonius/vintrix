@@ -8,6 +8,8 @@ import {
   ShieldCheck,
   Code,
   ArrowClockwise,
+  Sliders,
+  ChatCircleText,
 } from '@phosphor-icons/react';
 import { workspacesApi, aiApi } from '../../services/api';
 import { CustomAIModal, type AIEndpoint } from '../ai/CustomAIModal';
@@ -93,6 +95,7 @@ export function ChatboxView() {
   const [modelsList, setModelsList] = useState<AIModelOption[]>(AVAILABLE_MODELS);
   const [selectedModelId, setSelectedModelId] = useState(AVAILABLE_MODELS[0].id);
   const [isSending, setIsSending] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'chat' | 'settings'>('chat');
   const [isCustomAIOpen, setIsCustomAIOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -193,10 +196,26 @@ export function ChatboxView() {
   };
 
   return (
-    <div className="flex h-full w-full bg-[#050a10] text-[#e0e0e0] font-sans">
+    <div className="flex h-full w-full bg-[#050a10] text-[#e0e0e0] font-sans overflow-hidden">
       {/* Sidebar: Context Selector & Sessions */}
-      <aside className="w-80 border-r border-[#16243b] bg-[#0b1320] flex flex-col justify-between p-4 shrink-0">
+      <aside
+        className={`w-full md:w-80 border-r border-[#16243b] bg-[#0b1320] flex-col justify-between p-4 shrink-0 overflow-y-auto ${
+          mobileTab === 'settings' ? 'flex h-full' : 'hidden md:flex'
+        }`}
+      >
         <div className="space-y-6">
+          {/* Mobile Back to Chat Button */}
+          <div className="flex md:hidden items-center justify-between pb-3 border-b border-white/[0.08]">
+            <span className="text-xs font-semibold text-slate-200">Context & Model</span>
+            <button
+              onClick={() => setMobileTab('chat')}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-sky-400 bg-sky-500/10 rounded-md border border-sky-500/20"
+            >
+              <ChatCircleText size={14} />
+              <span>Back to Chat</span>
+            </button>
+          </div>
+
           {/* Workspace Context Selector */}
           <div>
             <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-2">
@@ -280,37 +299,51 @@ export function ChatboxView() {
       </aside>
 
       {/* Main Chat Interface */}
-      <main className="flex-1 flex flex-col h-full bg-[#050a10]">
+      <main
+        className={`flex-1 flex-col h-full bg-[#050a10] overflow-hidden ${
+          mobileTab === 'chat' ? 'flex' : 'hidden md:flex'
+        }`}
+      >
         {/* Chat Header info */}
-        <div className="h-14 border-b border-[#16243b] bg-[#0b1320] px-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-sky-950/40 border border-sky-500/30 rounded-lg text-sky-400">
-              <ChatTeardropDots size={20} />
+        <div className="h-14 border-b border-[#16243b] bg-[#0b1320] px-3 sm:px-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-1.5 sm:p-2 bg-sky-950/40 border border-sky-500/30 rounded-lg text-sky-400 shrink-0">
+              <ChatTeardropDots size={18} />
             </div>
-            <div>
-              <div className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-                <span>Codebase Architecture AI Copilot</span>
-                <span className="text-[10px] font-mono bg-sky-950/60 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded">
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm font-semibold text-slate-100 flex items-center gap-1.5 truncate">
+                <span className="truncate">Architecture AI Copilot</span>
+                <span className="text-[9px] sm:text-[10px] font-mono bg-sky-950/60 text-sky-400 border border-sky-500/30 px-1 py-0.2 rounded shrink-0">
                   {selectedModel?.modelId}
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 font-mono">
-                Active Context: {selectedWorkspace?.name} ({selectedWorkspace?.nodesCount} AST nodes
-                injected)
+              <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono truncate">
+                Context: {selectedWorkspace?.name}
               </div>
             </div>
           </div>
-          <button
-            onClick={handleResetSession}
-            title="Reload Session"
-            className="p-2 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <ArrowClockwise size={16} />
-          </button>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Mobile Context / Settings Button */}
+            <button
+              onClick={() => setMobileTab('settings')}
+              className="flex md:hidden items-center gap-1 p-1.5 text-xs text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded-lg"
+              title="Change workspace context or AI model"
+            >
+              <Sliders size={16} />
+            </button>
+            <button
+              onClick={handleResetSession}
+              title="Reload Session"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <ArrowClockwise size={15} />
+            </button>
+          </div>
         </div>
 
         {/* Message Stream */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4">
           {messages.map((msg) => (
             <div
               key={msg.id}

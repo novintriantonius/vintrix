@@ -106,29 +106,29 @@ export function WorkspaceTeamModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#080d16] border border-white/[0.08] rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[#080d16] border border-white/[0.08] rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-              <Users size={18} className="text-sky-400" />
-              Workspace Team & Collaboration
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/[0.08] flex items-center justify-between shrink-0">
+          <div className="min-w-0 pr-2">
+            <h3 className="text-sm sm:text-base font-semibold text-slate-100 flex items-center gap-2">
+              <Users size={18} className="text-sky-400 shrink-0" />
+              <span className="truncate">Workspace Team & Collaboration</span>
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
               Manage collaborators and role permissions for <span className="text-slate-200 font-medium">{workspaceName}</span>
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors shrink-0"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+        <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
           {/* Invite Input Box */}
           <form
             onSubmit={handleSendInvite}
@@ -282,16 +282,16 @@ export function WorkspaceTeamModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/[0.08] bg-[#050912]/50 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
-            <Shield size={14} className="text-sky-400" />
-            <span>Role-Based Access Control (RBAC) enforced</span>
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-white/[0.08] bg-[#050912]/50 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-mono text-slate-400">
+            <Shield size={14} className="text-sky-400 shrink-0" />
+            <span className="truncate">RBAC permissions enforced</span>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg text-xs bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 transition-colors"
+            className="px-4 py-1.5 rounded-lg text-xs bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 transition-colors shrink-0"
           >
             Done
           </button>

@@ -93,35 +93,35 @@ export function CustomAIModal({ isOpen, onClose, onEndpointSaved }: CustomAIModa
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#080d16] border border-white/[0.08] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[#080d16] border border-white/[0.08] rounded-2xl w-full max-w-lg max-h-[92vh] overflow-hidden shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-              <Cpu size={18} className="text-purple-400" />
-              Configure Custom AI Endpoint
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/[0.08] flex items-center justify-between shrink-0">
+          <div className="min-w-0 pr-2">
+            <h3 className="text-sm sm:text-base font-semibold text-slate-100 flex items-center gap-2">
+              <Cpu size={18} className="text-purple-400 shrink-0" />
+              <span className="truncate">Configure Custom AI Endpoint</span>
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
               Connect OpenAI API, Azure OpenAI, Ollama, vLLM, or any custom compatible endpoint.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors shrink-0"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4 overflow-y-auto max-h-[65vh]">
+        <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-4 space-y-4 overflow-y-auto flex-1">
           {/* Preset Buttons */}
           <div>
             <label className="block text-[11px] font-mono text-slate-400 mb-1.5">
               QUICK PRESETS
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -129,7 +129,7 @@ export function CustomAIModal({ isOpen, onClose, onEndpointSaved }: CustomAIModa
                   setBaseUrl('https://api.openai.com/v1');
                   setModels(['gpt-4o', 'gpt-4o-mini', 'o1-preview']);
                 }}
-                className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-xs text-slate-300 transition-colors"
+                className="px-2 sm:px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-[11px] sm:text-xs text-slate-300 transition-colors"
               >
                 OpenAI Official
               </button>
@@ -141,7 +141,7 @@ export function CustomAIModal({ isOpen, onClose, onEndpointSaved }: CustomAIModa
                   setApiKey('ollama');
                   setModels(['llama3.2', 'qwen2.5-coder', 'deepseek-r1']);
                 }}
-                className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-xs text-slate-300 transition-colors"
+                className="px-2 sm:px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-[11px] sm:text-xs text-slate-300 transition-colors"
               >
                 Ollama (Local)
               </button>
@@ -152,7 +152,7 @@ export function CustomAIModal({ isOpen, onClose, onEndpointSaved }: CustomAIModa
                   setBaseUrl('https://openrouter.ai/api/v1');
                   setModels(['anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat']);
                 }}
-                className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-xs text-slate-300 transition-colors"
+                className="px-2 sm:px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-[11px] sm:text-xs text-slate-300 transition-colors"
               >
                 OpenRouter
               </button>

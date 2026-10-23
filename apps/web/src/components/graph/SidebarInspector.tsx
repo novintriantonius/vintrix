@@ -9,6 +9,7 @@ import {
   Terminal,
   ShieldCheck,
   TreeStructure,
+  X,
 } from '@phosphor-icons/react';
 import type { CodeNodeData } from './CustomCodeNode';
 
@@ -16,12 +17,16 @@ interface SidebarInspectorProps {
   selectedNode: CodeNodeData | null;
   onSelectNodeByPath: (path: string) => void;
   allNodes: CodeNodeData[];
+  isOpenMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export function SidebarInspector({
   selectedNode,
   onSelectNodeByPath,
   allNodes,
+  isOpenMobile,
+  onCloseMobile,
 }: SidebarInspectorProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'explorer' | 'security'>('details');
   const [copied, setCopied] = useState(false);
@@ -34,9 +39,34 @@ export function SidebarInspector({
   };
 
   return (
-    <div className="w-[380px] h-[calc(100vh-48px)] bg-[#070b12] border-l border-white/[0.08] flex flex-col z-20">
-      {/* Tab Navigation Segmented Glass Pill */}
-      <div className="px-4 py-3 border-b border-white/[0.08]">
+    <>
+      {/* Mobile Backdrop */}
+      {isOpenMobile && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden"
+          onClick={onCloseMobile}
+        />
+      )}
+
+      {/* Main Inspector Container */}
+      <div
+        className={`fixed md:relative inset-y-12 right-0 md:inset-y-auto w-full max-w-[380px] sm:w-[380px] h-[calc(100vh-48px)] bg-[#070b12] border-l border-white/[0.08] flex flex-col z-40 transition-transform duration-300 md:translate-x-0 ${
+          isOpenMobile ? 'translate-x-0 shadow-2xl' : 'translate-x-full md:translate-x-0'
+        }`}
+      >
+        {/* Mobile Header with Close Button */}
+        <div className="flex md:hidden items-center justify-between px-4 py-2 border-b border-white/[0.08] bg-[#090e18]">
+          <span className="text-xs font-semibold text-slate-200">AST Node Inspector</span>
+          <button
+            onClick={onCloseMobile}
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.06]"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Tab Navigation Segmented Glass Pill */}
+        <div className="px-4 py-3 border-b border-white/[0.08]">
         <div className="flex bg-[#0d1422] p-1 rounded-lg border border-white/[0.06]">
           <button
             onClick={() => setActiveTab('details')}
@@ -235,5 +265,6 @@ export function SidebarInspector({
         )}
       </div>
     </div>
+    </>
   );
 }
