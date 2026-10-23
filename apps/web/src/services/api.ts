@@ -138,6 +138,19 @@ export const sourcesApi = {
     { method: 'POST', body: JSON.stringify(body) },
   ),
 
+  browseSSH: (body: {
+    host: string;
+    port: number;
+    username: string;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+    path?: string;
+  }) => request<{ currentPath: string; directories: string[]; files: string[] }>(
+    '/sources/ssh/browse',
+    { method: 'POST', body: JSON.stringify(body) },
+  ),
+
   triggerReindex: (sourceId: string) =>
     request<{ success: boolean }>(`/sources/${sourceId}/reindex`, { method: 'POST' }),
 
