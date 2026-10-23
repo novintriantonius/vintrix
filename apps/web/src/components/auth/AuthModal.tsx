@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, ShieldCheck, Loader2 } from 'lucide-react';
+import { ShieldCheck, Loader2 } from 'lucide-react';
 import { authApi, type AuthUser } from '../../services/api';
+import { Modal } from '../common';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -11,8 +12,6 @@ interface AuthModalProps {
 export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  if (!isOpen) return null;
 
   const handleOAuthLogin = async (provider: 'google' | 'github') => {
     setLoadingProvider(provider);
@@ -36,27 +35,27 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-[#080d16] border border-white/[0.08] rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col p-6 sm:p-7 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-        >
-          <X size={18} />
-        </button>
-
-        <div className="text-center mb-6 pt-2">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 shadow-lg shadow-sky-500/20 mb-3">
-            <span className="font-bold text-lg text-slate-950 font-mono">VX</span>
-          </div>
-          <h3 className="text-lg font-bold text-white tracking-tight">Sign in to Vintrix</h3>
-          <p className="text-xs text-slate-400 mt-1">
-            Passwordless authentication. No passwords needed.
-          </p>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      maxWidth="sm"
+      title="Sign in to Vintrix"
+      subtitle="Passwordless authentication. No passwords needed."
+      icon={
+        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center shadow-md shadow-sky-500/20">
+          <span className="font-bold text-xs text-slate-950 font-mono">VX</span>
         </div>
-
+      }
+      footer={
+        <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-slate-500">
+          <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
+          <span>OAuth 2.0 PKCE • JWT Tokenized Session</span>
+        </div>
+      }
+    >
+      <div className="p-5 sm:p-6 space-y-4">
         {errorMsg && (
-          <div className="mb-4 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs text-center">
+          <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs text-center">
             {errorMsg}
           </div>
         )}
@@ -116,13 +115,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             <span>Continue with GitHub</span>
           </button>
         </div>
-
-        {/* Security Assurance */}
-        <div className="mt-6 pt-4 border-t border-white/[0.06] flex items-center justify-center gap-1.5 text-[11px] font-mono text-slate-500">
-          <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
-          <span>OAuth 2.0 PKCE • JWT Tokenized Session</span>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
