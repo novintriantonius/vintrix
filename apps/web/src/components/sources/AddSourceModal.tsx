@@ -10,14 +10,16 @@ import {
   X,
   Plus,
 } from 'lucide-react';
+import { sourcesApi } from '../../services/api';
 
 interface AddSourceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSourceAdded: (source: { name: string; type: 'git' | 'ssh' }) => void;
+  workspaceId: string;
+  onSourceAdded: (source: { id: string; name: string; type: 'git' | 'ssh' }) => void;
 }
 
-export function AddSourceModal({ isOpen, onClose, onSourceAdded }: AddSourceModalProps) {
+export function AddSourceModal({ isOpen, onClose, workspaceId, onSourceAdded }: AddSourceModalProps) {
   const [activeType, setActiveType] = useState<'git' | 'ssh'>('git');
 
   // Git state
@@ -49,33 +51,65 @@ export function AddSourceModal({ isOpen, onClose, onSourceAdded }: AddSourceModa
     setIsTesting(true);
     setTestResult(null);
     try {
-      // In production calls POST /sources/test-ssh
-      await new Promise((res) => setTimeout(res, 800));
-      setTestResult({
-        success: true,
-        message: `SSH Handshake & SFTP connection successful. Remote host ${sshHost}:${sshPort} reachable.`,
+      const result = await sourcesApi.testSSH({
+        host: sshHost,
+        port: Number(sshPort),
+        username: sshUsername,
+        password: sshAuthType === 'password' ? sshPassword : undefined,
+        privateKey: sshAuthType === 'key' ? sshPrivateKey : undefined,
+        passphrase: sshPassphrase || undefined,
       });
-    } catch {
+      setTestResult({
+        success: result.success,
+        message: result.message ?? result.error ?? 'Connection tested.',
+      });
+    } catch (err: unknown) {
       setTestResult({
         success: false,
-        message: 'Failed to establish SSH handshake. Check host, port, or authentication key.',
+        message: err instanceof Error ? err.message : 'Failed to establish SSH handshake.',
       });
     } finally {
       setIsTesting(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      onSourceAdded({
-        name: activeType === 'git' ? (gitName || 'Git Repo') : (sshName || 'SSH Server'),
-        type: activeType,
-      });
+    try {
+      let result: { id: string; name: string; type: string };
+      if (activeType === 'git') {
+        result = await sourcesApi.addGit({
+          workspaceId,
+          name: gitName || 'Git Repo',
+          repoUrl: gitRepoUrl,
+          branch: gitBranch,
+          token: gitToken || undefined,
+          indexPaths: gitIndexPaths.split(',').map((p) => p.trim()).filter(Boolean),
+        });
+      } else {
+        result = await sourcesApi.addSSH({
+          workspaceId,
+          name: sshName || 'SSH Server',
+          host: sshHost,
+          port: Number(sshPort),
+          username: sshUsername,
+          password: sshAuthType === 'password' ? sshPassword : undefined,
+          privateKey: sshAuthType === 'key' ? sshPrivateKey : undefined,
+          passphrase: sshPassphrase || undefined,
+          indexPaths: sshIndexPaths.split(',').map((p) => p.trim()).filter(Boolean),
+        });
+      }
+      onSourceAdded({ id: result.id, name: result.name, type: activeType });
       onClose();
-    }, 500);
+    } catch (err: unknown) {
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to add source.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

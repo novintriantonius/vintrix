@@ -44,7 +44,7 @@ const app = new Elysia()
         ],
       })),
   )
-  .listen(3001);
+  .listen(Number(process.env.PORT) || 3001);
 
 console.log(`🚀 Vintrix API running at http://${app.server?.hostname}:${app.server?.port}`);
 console.log(`📄 Swagger documentation at http://${app.server?.hostname}:${app.server?.port}/swagger`);

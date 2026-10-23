@@ -9,6 +9,8 @@ import {
   Code,
   ArrowClockwise,
 } from '@phosphor-icons/react';
+import { workspacesApi, aiApi } from '../../services/api';
+import { CustomAIModal, type AIEndpoint } from '../ai/CustomAIModal';
 
 export interface ChatMessage {
   id: string;
@@ -16,8 +18,6 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
 }
-
-import { CustomAIModal, type AIEndpoint } from '../ai/CustomAIModal';
 
 export interface WorkspaceContextOption {
   id: string;
@@ -88,6 +88,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 export function ChatboxView() {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [inputMessage, setInputMessage] = useState('');
+  const [workspacesList, setWorkspacesList] = useState<WorkspaceContextOption[]>(AVAILABLE_WORKSPACES);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(AVAILABLE_WORKSPACES[0].id);
   const [modelsList, setModelsList] = useState<AIModelOption[]>(AVAILABLE_MODELS);
   const [selectedModelId, setSelectedModelId] = useState(AVAILABLE_MODELS[0].id);
@@ -95,8 +96,29 @@ export function ChatboxView() {
   const [isCustomAIOpen, setIsCustomAIOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const selectedWorkspace = AVAILABLE_WORKSPACES.find((w) => w.id === selectedWorkspaceId);
-  const selectedModel = modelsList.find((m) => m.id === selectedModelId);
+  // Fetch workspaces dynamically from backend
+  useEffect(() => {
+    workspacesApi
+      .list()
+      .then((data) => {
+        if (data && data.length > 0) {
+          const mapped: WorkspaceContextOption[] = data.map((ws) => ({
+            id: ws.id,
+            name: ws.name,
+            sourcesDescription: ws.description || 'Connected repository workspace',
+            nodesCount: 7,
+          }));
+          setWorkspacesList(mapped);
+          setSelectedWorkspaceId(mapped[0].id);
+        }
+      })
+      .catch(() => {
+        // Fallback to presets
+      });
+  }, []);
+
+  const selectedWorkspace = workspacesList.find((w) => w.id === selectedWorkspaceId) ?? workspacesList[0];
+  const selectedModel = modelsList.find((m) => m.id === selectedModelId) ?? modelsList[0];
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -120,22 +142,13 @@ export function ChatboxView() {
 
     try {
       // Send message to Vintrix API AI completion
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: '00000000-0000-0000-0000-000000000001',
-          workspaceId: '00000000-0000-0000-0000-000000000001',
-          modelId: selectedModelId,
-          message: userText,
-        }),
+      const resData = await aiApi.chat({
+        sessionId: '00000000-0000-0000-0000-000000000001',
+        workspaceId: selectedWorkspaceId,
+        modelId: selectedModelId,
+        message: userText,
       });
 
-      if (!response.ok) {
-        throw new Error(`API returned status ${response.status}`);
-      }
-
-      const resData = (await response.json()) as { message?: { content?: string } };
       const assistantText =
         resData.message?.content ??
         `Based on the AST Knowledge Graph of workspace [${selectedWorkspace?.name}], requests are dispatched through the API Controller, resolved by the Domain Service layer, and secured via AES-256-GCM envelope encryption.`;
@@ -191,7 +204,7 @@ export function ChatboxView() {
               Workspace Context
             </label>
             <div className="space-y-1.5">
-              {AVAILABLE_WORKSPACES.map((ws) => (
+              {workspacesList.map((ws) => (
                 <button
                   key={ws.id}
                   onClick={() => setSelectedWorkspaceId(ws.id)}

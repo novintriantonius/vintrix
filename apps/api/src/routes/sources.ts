@@ -1,13 +1,65 @@
 import { Elysia, t } from 'elysia';
 import { db } from '../db/client';
-import { codeSources, sshSourceDetails } from '../db/schema';
+import { codeSources, sshSourceDetails, gitSourceDetails } from '../db/schema';
 import { encryptCredential, decryptCredential } from '../services/crypto';
-import { testSSHConnection, listRemoteDirectory, type SSHConnectOptions } from '../services/ssh';
+import { testSSHConnection, listRemoteDirectory } from '../services/ssh';
 import { eq } from 'drizzle-orm';
 
 const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY ?? 'vintrix-dev-master-key-must-be-32-chars!!';
 
 export const sourcesRouter = new Elysia({ prefix: '/sources' })
+  // ─── List sources for a workspace ───────────────────────────────────────────
+  .get('/workspace/:workspaceId', async ({ params }) => {
+    const sources = await db
+      .select({
+        id: codeSources.id,
+        workspaceId: codeSources.workspaceId,
+        name: codeSources.name,
+        type: codeSources.type,
+        isIndexed: codeSources.isIndexed,
+        lastIndexAt: codeSources.lastIndexAt,
+        createdAt: codeSources.createdAt,
+        updatedAt: codeSources.updatedAt,
+        // SSH details
+        host: sshSourceDetails.host,
+        port: sshSourceDetails.port,
+        // Git details
+        repoUrl: gitSourceDetails.repoUrl,
+        branch: gitSourceDetails.branch,
+      })
+      .from(codeSources)
+      .leftJoin(sshSourceDetails, eq(sshSourceDetails.codeSourceId, codeSources.id))
+      .leftJoin(gitSourceDetails, eq(gitSourceDetails.codeSourceId, codeSources.id))
+      .where(eq(codeSources.workspaceId, params.workspaceId));
+
+    return sources.map((s) => ({
+      ...s,
+      indexPaths: [],
+    }));
+  })
+  // ─── Delete a source ─────────────────────────────────────────────────────────
+  .delete('/:id', async ({ params, set }) => {
+    const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, params.id));
+    if (!existing) {
+      set.status = 404;
+      return { message: 'Source not found' };
+    }
+    await db.delete(codeSources).where(eq(codeSources.id, params.id));
+    return { success: true };
+  })
+  // ─── Trigger re-index (stub — marks isIndexed reset for re-run) ───────────────
+  .post('/:id/reindex', async ({ params, set }) => {
+    const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, params.id));
+    if (!existing) {
+      set.status = 404;
+      return { message: 'Source not found' };
+    }
+    await db
+      .update(codeSources)
+      .set({ isIndexed: false, lastIndexAt: null })
+      .where(eq(codeSources.id, params.id));
+    return { success: true, message: 'Re-index queued' };
+  })
   // Test connection without saving
   .post(
     '/ssh/test',
@@ -84,6 +136,44 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
         password: t.Optional(t.String()),
         privateKey: t.Optional(t.String()),
         passphrase: t.Optional(t.String()),
+        indexPaths: t.Optional(t.Array(t.String())),
+      }),
+    },
+  )
+  // ─── Create Git source ────────────────────────────────────────────────────────
+  .post(
+    '/git',
+    async ({ body }) => {
+      const encryptedToken = body.token
+        ? await encryptCredential(body.token, MASTER_KEY)
+        : null;
+
+      const [source] = await db
+        .insert(codeSources)
+        .values({
+          workspaceId: body.workspaceId,
+          name: body.name,
+          type: 'git',
+        })
+        .returning();
+
+      await db.insert(gitSourceDetails).values({
+        codeSourceId: source.id,
+        repoUrl: body.repoUrl,
+        branch: body.branch ?? 'main',
+        encryptedToken,
+        indexPaths: body.indexPaths ?? [],
+      });
+
+      return { id: source.id, name: source.name, type: 'git' };
+    },
+    {
+      body: t.Object({
+        workspaceId: t.String({ format: 'uuid' }),
+        name: t.String(),
+        repoUrl: t.String(),
+        branch: t.Optional(t.String()),
+        token: t.Optional(t.String()),
         indexPaths: t.Optional(t.Array(t.String())),
       }),
     },

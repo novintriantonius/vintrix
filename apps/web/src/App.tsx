@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -26,55 +26,170 @@ import { CustomCodeNode, type CodeNodeData, type NodeKind } from './components/g
 import { INITIAL_WORKSPACE_NODES, INITIAL_WORKSPACE_EDGES } from './components/graph/mockData';
 import { GraphToolbar } from './components/graph/GraphToolbar';
 import { SidebarInspector } from './components/graph/SidebarInspector';
+import { SlidingCodeViewer } from './components/graph/SlidingCodeViewer';
 import { ChatboxView } from './components/chat/ChatboxView';
 import { AddSourceModal } from './components/sources/AddSourceModal';
 import {
   ManageSourcesModal,
-  INITIAL_WORKSPACE_SOURCES,
   type CodeSourceItem,
 } from './components/sources/ManageSourcesModal';
 import {
   WorkspaceTeamModal,
-  INITIAL_WORKSPACE_MEMBERS,
   type WorkspaceMember,
 } from './components/workspace/WorkspaceTeamModal';
+import { sourcesApi, workspacesApi, type WorkspaceMemberAPI } from './services/api';
+
+// Default workspace ID — in production this comes from auth session
+const DEFAULT_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
 
 const nodeTypes = {
   codeNode: CustomCodeNode,
 };
+
+function sourceApiToItem(s: {
+  id: string;
+  name: string;
+  type: string;
+  isIndexed: boolean;
+  lastIndexAt: string | null;
+  host?: string | null;
+  port?: number | null;
+  repoUrl?: string | null;
+  branch?: string | null;
+}): CodeSourceItem {
+  const isGit = s.type === 'git';
+  return {
+    id: s.id,
+    name: s.name,
+    type: s.type as 'git' | 'ssh',
+    location: isGit ? (s.repoUrl ?? 'unknown') : `${s.host ?? 'unknown'}`,
+    branchOrPort: isGit ? (s.branch ?? 'main') : `Port ${s.port ?? 22}`,
+    indexPaths: [],
+    status: s.isIndexed ? 'synced' : 'indexing',
+    lastSyncedAt: s.lastIndexAt ? new Date(s.lastIndexAt).toLocaleString() : 'Never',
+    nodesCount: 0,
+  };
+}
+
+function memberApiToLocal(m: WorkspaceMemberAPI): WorkspaceMember {
+  return {
+    userId: m.userId,
+    name: m.displayName ?? m.email.split('@')[0],
+    email: m.email,
+    roleName: m.roleName as WorkspaceMember['roleName'],
+    invitedAt: new Date(m.invitedAt).toLocaleDateString(),
+  };
+}
 
 function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }) {
   const [workspaceTab, setWorkspaceTab] = useState<'graph' | 'chat'>('graph');
   const [nodes, setNodes] = useState<Node[]>(INITIAL_WORKSPACE_NODES as unknown as Node[]);
   const [edges, setEdges] = useState<Edge[]>(INITIAL_WORKSPACE_EDGES);
   const [selectedNodeId, setSelectedNodeId] = useState<string>(INITIAL_WORKSPACE_NODES[0].id);
+  const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
-  const [sourcesList, setSourcesList] = useState<CodeSourceItem[]>(INITIAL_WORKSPACE_SOURCES);
-  const [membersList, setMembersList] = useState<WorkspaceMember[]>(INITIAL_WORKSPACE_MEMBERS);
+  const [sourcesList, setSourcesList] = useState<CodeSourceItem[]>([]);
+  const [membersList, setMembersList] = useState<WorkspaceMember[]>([]);
 
-  const handleInviteMember = (email: string, roleName: 'admin' | 'member' | 'viewer') => {
-    const newMember: WorkspaceMember = {
-      userId: `user-${Date.now()}`,
-      name: email.split('@')[0],
-      email,
-      roleName,
-      invitedAt: 'Just now',
-    };
-    setMembersList((prev) => [...prev, newMember]);
+  // Load initial sources and members from backend API
+  useEffect(() => {
+    sourcesApi
+      .list(DEFAULT_WORKSPACE_ID)
+      .then((data) => {
+        if (data && data.length > 0) {
+          setSourcesList(data.map(sourceApiToItem));
+        }
+      })
+      .catch(() => {
+        // Fallback default sample source when backend not running
+        setSourcesList([
+          {
+            id: 'src-1',
+            name: 'vintrix-web',
+            type: 'git',
+            location: 'github.com/novintriantonius/vintrix',
+            branchOrPort: 'main',
+            indexPaths: ['apps/web/src/'],
+            status: 'synced',
+            lastSyncedAt: 'Just now',
+            nodesCount: 4,
+          },
+          {
+            id: 'src-2',
+            name: 'vintrix-api',
+            type: 'git',
+            location: 'github.com/novintriantonius/vintrix',
+            branchOrPort: 'main',
+            indexPaths: ['apps/api/src/'],
+            status: 'synced',
+            lastSyncedAt: 'Just now',
+            nodesCount: 3,
+          },
+        ]);
+      });
+
+    workspacesApi
+      .listMembers(DEFAULT_WORKSPACE_ID)
+      .then((data) => {
+        if (data && data.length > 0) {
+          setMembersList(data.map(memberApiToLocal));
+        }
+      })
+      .catch(() => {
+        // Fallback default sample members
+        setMembersList([
+          {
+            userId: 'user-1',
+            name: 'Novin Triantonius',
+            email: 'novin@vintrix.ai',
+            roleName: 'admin',
+            invitedAt: 'Workspace Owner',
+          },
+        ]);
+      });
+  }, []);
+
+  const handleInviteMember = async (email: string, roleName: 'admin' | 'member' | 'viewer') => {
+    try {
+      const res = await workspacesApi.inviteMember(DEFAULT_WORKSPACE_ID, email, roleName);
+      if (res.member) {
+        setMembersList((prev) => [...prev, memberApiToLocal(res.member)]);
+      }
+    } catch {
+      // Local optimistic update
+      const newMember: WorkspaceMember = {
+        userId: `user-${Date.now()}`,
+        name: email.split('@')[0],
+        email,
+        roleName,
+        invitedAt: 'Just now',
+      };
+      setMembersList((prev) => [...prev, newMember]);
+    }
   };
 
-  const handleUpdateRole = (userId: string, newRole: 'admin' | 'member' | 'viewer') => {
+  const handleUpdateRole = async (userId: string, newRole: 'admin' | 'member' | 'viewer') => {
+    try {
+      await workspacesApi.updateMemberRole(DEFAULT_WORKSPACE_ID, userId, newRole);
+    } catch {
+      // ignore
+    }
     setMembersList((prev) =>
       prev.map((m) => (m.userId === userId ? { ...m, roleName: newRole } : m))
     );
   };
 
-  const handleRemoveMember = (userId: string) => {
+  const handleRemoveMember = async (userId: string) => {
+    try {
+      await workspacesApi.removeMember(DEFAULT_WORKSPACE_ID, userId);
+    } catch {
+      // ignore
+    }
     setMembersList((prev) => prev.filter((m) => m.userId !== userId));
   };
 
@@ -83,11 +198,15 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
   const gitSourcesCount = sourcesList.filter((s) => s.type === 'git').length;
   const sshSourcesCount = sourcesList.filter((s) => s.type === 'ssh').length;
 
-  const handleDeleteSource = (sourceId: string) => {
+  const handleDeleteSource = async (sourceId: string) => {
     const targetSource = sourcesList.find((s) => s.id === sourceId);
+    try {
+      await sourcesApi.delete(sourceId);
+    } catch {
+      // ignore
+    }
     setSourcesList((prev) => prev.filter((s) => s.id !== sourceId));
     if (targetSource) {
-      // Remove associated nodes and edges
       setNodes((prev) =>
         prev.filter((node) => {
           const data = node.data as unknown as CodeNodeData;
@@ -97,7 +216,12 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
     }
   };
 
-  const handleTriggerReindex = (sourceId: string) => {
+  const handleTriggerReindex = async (sourceId: string) => {
+    try {
+      await sourcesApi.triggerReindex(sourceId);
+    } catch {
+      // ignore
+    }
     setSourcesList((prev) =>
       prev.map((s) =>
         s.id === sourceId
@@ -278,13 +402,23 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
                 nodeTypes={nodeTypes}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
-                onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+                onNodeClick={(_, node) => {
+                  setSelectedNodeId(node.id);
+                  setIsCodeViewerOpen(true);
+                }}
                 fitView
                 proOptions={{ hideAttribution: true }}
               >
                 <Background color="#16243b" gap={20} size={1.5} />
                 <Controls className="!bg-[#0b1320] !border-[#16243b] !rounded-xl overflow-hidden [&>button]:!bg-[#0b1320] [&>button]:!border-[#16243b] [&>button]:!fill-slate-300 hover:[&>button]:!bg-slate-800" />
               </ReactFlow>
+
+              {/* Bottom Sliding Code Viewer Drawer */}
+              <SlidingCodeViewer
+                node={selectedNodeData}
+                isOpen={isCodeViewerOpen}
+                onClose={() => setIsCodeViewerOpen(false)}
+              />
             </div>
 
             {/* Right Sidebar Inspector */}
@@ -303,12 +437,13 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
       <AddSourceModal
         isOpen={isAddSourceOpen}
         onClose={() => setIsAddSourceOpen(false)}
+        workspaceId={DEFAULT_WORKSPACE_ID}
         onSourceAdded={(newSource) => {
           const item: CodeSourceItem = {
-            id: `src-${Date.now()}`,
+            id: newSource.id,
             name: newSource.name,
             type: newSource.type,
-            location: newSource.type === 'git' ? 'github.com/vintrix/new-repo' : 'root@remote-host',
+            location: newSource.type === 'git' ? 'Repository connected' : 'SSH Server connected',
             branchOrPort: newSource.type === 'git' ? 'main' : 'Port 22',
             indexPaths: ['src/'],
             status: 'synced',
