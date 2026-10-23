@@ -80,7 +80,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
     id: 'msg-init-1',
     role: 'assistant',
     content:
-      'Halo! Saya **Vintrix AI Architect**. Saya telah memuat konteks Knowledge Graph dari workspace ini.\n\nAnda dapat menanyakan arsitektur alur data, relasi modul antar-file, enkripsi kredensial ISO/IEC 27001, atau meminta penjelasan method tertentu pada codebase.',
+      'Hello! I am your **Vintrix AI Architect**. I have ingested the AST Knowledge Graph context for this workspace.\n\nYou can query data flow architectures, cross-repo module dependencies, ISO/IEC 27001 credential cryptographic paths, or explain any method implementation across your codebase.',
     createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   },
 ];
@@ -138,7 +138,7 @@ export function ChatboxView() {
       const resData = (await response.json()) as { message?: { content?: string } };
       const assistantText =
         resData.message?.content ??
-        `Berdasarkan AST Knowledge Graph workspace [${selectedWorkspace?.name}], alur request diproses melalui Controller lalu diteruskan ke Service dengan proteksi enkripsi AES-256-GCM.`;
+        `Based on the AST Knowledge Graph of workspace [${selectedWorkspace?.name}], requests are dispatched through the API Controller, resolved by the Domain Service layer, and secured via AES-256-GCM envelope encryption.`;
 
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
@@ -152,7 +152,7 @@ export function ChatboxView() {
       const fallbackMsg: ChatMessage = {
         id: `ai-mock-${Date.now()}`,
         role: 'assistant',
-        content: `**[Analisis Arsitektur Konteks: ${selectedWorkspace?.name}]**\n\nModul yang Anda tanyakan berelasi erat dengan layer database dan otentikasi. Sesuai data XERJ AST indexer:\n- Kredensial disimpan via envelope key \`AES-256-GCM\` (PBKDF2 SHA-256, 310k iterasi).\n- Hubungan node: \`AuthController\` -> \`AuthService\` -> \`CryptoService\` -> Database PostgreSQL.\n\nApakah Anda ingin melihat dependensi graph langsung di kanvas?`,
+        content: `**[Architecture Analysis: ${selectedWorkspace?.name}]**\n\nThe requested module coordinates across the persistence and security boundary. Per XERJ AST indexer data:\n- Credentials are encrypted at rest with \`AES-256-GCM\` (PBKDF2 SHA-256, 310k iterations).\n- Dependency chain: \`WorkspaceRouter\` -> \`CryptoEngine\` -> PostgreSQL database schema.\n\nWould you like to inspect this node directly in the Knowledge Graph canvas?`,
         createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, fallbackMsg]);
@@ -173,7 +173,7 @@ export function ChatboxView() {
       {
         id: `msg-reset-${Date.now()}`,
         role: 'assistant',
-        content: `Sesi percakapan baru dimulai untuk konteks workspace **${selectedWorkspace?.name}** dengan model **${selectedModel?.displayName}**.`,
+        content: `New conversation thread initialized for workspace context **${selectedWorkspace?.name}** using model **${selectedModel?.displayName}**.`,
         createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -350,7 +350,7 @@ export function ChatboxView() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Tanyakan arsitektur codebase, relasi modul, atau keamanan ISO... (Enter to send, Shift+Enter for newline)"
+              placeholder="Ask about codebase architecture, module relations, or cryptographic boundaries... (Enter to send, Shift+Enter for newline)"
               className="w-full bg-[#050a10] border border-[#16243b] focus:border-sky-500/60 rounded-xl px-4 py-3 text-xs text-slate-100 placeholder-slate-500 outline-none resize-none transition-colors pr-12 font-sans"
             />
             <button
@@ -362,7 +362,7 @@ export function ChatboxView() {
             </button>
           </div>
           <div className="text-center mt-2 text-[10px] font-mono text-slate-500">
-            Konteks dipasok via XERJ AST indexer & Drizzle ORM schema • AES-256-GCM Envelope Encryption
+            Context powered by XERJ AST indexer & Drizzle ORM schema • AES-256-GCM Envelope Encryption
           </div>
         </div>
       </main>

@@ -164,7 +164,7 @@ export function SidebarInspector({
             ) : (
               <div className="h-64 flex flex-col items-center justify-center text-center text-slate-500 gap-2">
                 <Graph size={28} weight="duotone" className="text-slate-600" />
-                <p className="text-xs">Pilih salah satu node pada kanvas untuk menginspeksi arsitektur AST.</p>
+                <p className="text-xs">Select any node on the canvas to inspect its AST architecture.</p>
               </div>
             )}
           </>
@@ -202,13 +202,13 @@ export function SidebarInspector({
 
         {activeTab === 'security' && (
           <div className="space-y-3">
-            <div className="p-3.5 bg-emerald-950/20 border border-emerald-500/20 rounded-2xl space-y-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                <ShieldCheck size={15} weight="bold" />
-                ISO/IEC 27001 Cryptographic Safeguard
+            <div className="p-3.5 bg-emerald-950/20 border border-emerald-500/20 rounded-2xl space-y-2">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
+                <ShieldCheck size={16} weight="duotone" />
+                <span>ISO/IEC 27001 Cryptographic Safeguards</span>
               </div>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                Semua SSH private keys, remote tokens, dan API keys dienkripsi menggunakan PBKDF2-SHA256 (310,000 iterasi) dengan AES-256-GCM envelope authenticated encryption.
+                All SSH private keys, remote tokens, and API credentials are encrypted with PBKDF2-SHA256 (310,000 iterations) and AES-256-GCM envelope authenticated encryption.
               </p>
             </div>
 
@@ -219,15 +219,15 @@ export function SidebarInspector({
               <ul className="space-y-2 text-slate-400 text-[11px]">
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  Plaintext credentials tidak pernah disimpan di disk atau log
+                  Plaintext credentials never persist on disk or in log streams
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  SFTP remote traversal sandboxed per session
+                  SFTP remote traversal strictly sandboxed per session
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  OAuth Token & API key didekripsi in-memory on-demand
+                  OAuth tokens and API keys decrypted in-memory on demand
                 </li>
               </ul>
             </div>

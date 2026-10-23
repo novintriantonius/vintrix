@@ -59,12 +59,12 @@ export function CustomAIModal({ isOpen, onClose, onEndpointSaved }: CustomAIModa
       await new Promise((res) => setTimeout(res, 600));
       setTestResult({
         success: true,
-        message: `Koneksi endpoint valid. Berhasil terhubung ke ${new URL(baseUrl).hostname || baseUrl}.`,
+        message: `Endpoint connection verified. Reachable at ${new URL(baseUrl).hostname || baseUrl}.`,
       });
     } catch {
       setTestResult({
         success: false,
-        message: 'Gagal menghubungi endpoint. Periksa Base URL atau API Key.',
+        message: 'Failed to connect to endpoint. Please verify Base URL and API Key.',
       });
     } finally {
       setIsTesting(false);
@@ -103,7 +103,7 @@ export function CustomAIModal({ isOpen, onClose, onEndpointSaved }: CustomAIModa
               Configure Custom AI Endpoint
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Hubungkan OpenAI API, Azure OpenAI, Ollama, vLLM, atau local compatible endpoint.
+              Connect OpenAI API, Azure OpenAI, Ollama, vLLM, or any custom compatible endpoint.
             </p>
           </div>
           <button
@@ -282,7 +282,7 @@ export function CustomAIModal({ isOpen, onClose, onEndpointSaved }: CustomAIModa
           {/* ISO 27001 Cryptographic Safeguard Banner */}
           <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl flex items-center gap-2.5 text-[11px] text-slate-400 font-mono">
             <ShieldCheck size={16} className="text-emerald-400 shrink-0" />
-            <span>API Key dienkripsi di database menggunakan AES-256-GCM envelope encryption.</span>
+            <span>API Key encrypted at rest using AES-256-GCM envelope encryption.</span>
           </div>
 
           {/* Footer Submit */}
