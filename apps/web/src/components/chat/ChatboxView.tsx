@@ -17,6 +17,8 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+import { CustomAIModal, type AIEndpoint } from '../ai/CustomAIModal';
+
 export interface WorkspaceContextOption {
   id: string;
   name: string;
@@ -87,12 +89,14 @@ export function ChatboxView() {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [inputMessage, setInputMessage] = useState('');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(AVAILABLE_WORKSPACES[0].id);
+  const [modelsList, setModelsList] = useState<AIModelOption[]>(AVAILABLE_MODELS);
   const [selectedModelId, setSelectedModelId] = useState(AVAILABLE_MODELS[0].id);
   const [isSending, setIsSending] = useState(false);
+  const [isCustomAIOpen, setIsCustomAIOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const selectedWorkspace = AVAILABLE_WORKSPACES.find((w) => w.id === selectedWorkspaceId);
-  const selectedModel = AVAILABLE_MODELS.find((m) => m.id === selectedModelId);
+  const selectedModel = modelsList.find((m) => m.id === selectedModelId);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -211,12 +215,22 @@ export function ChatboxView() {
 
           {/* AI Model Selector */}
           <div>
-            <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-2">
-              <Cpu size={14} className="text-purple-400" />
-              AI Model & Endpoint
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Cpu size={14} className="text-purple-400" />
+                AI Model & Endpoint
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsCustomAIOpen(true)}
+                className="text-[10px] text-purple-400 hover:text-purple-300 font-medium flex items-center gap-1 hover:underline"
+              >
+                <Plus size={11} />
+                <span>Custom</span>
+              </button>
+            </div>
             <div className="space-y-1.5">
-              {AVAILABLE_MODELS.map((model) => (
+              {modelsList.map((model) => (
                 <button
                   key={model.id}
                   onClick={() => setSelectedModelId(model.id)}
@@ -227,7 +241,7 @@ export function ChatboxView() {
                   }`}
                 >
                   <div className="font-medium text-slate-200">{model.displayName}</div>
-                  <div className="text-[10px] font-mono text-purple-400/80 mt-0.5">
+                  <div className="text-[10px] font-mono text-purple-400/80 mt-0.5 truncate">
                     {model.provider}
                   </div>
                 </button>
@@ -352,6 +366,25 @@ export function ChatboxView() {
           </div>
         </div>
       </main>
+
+      {/* Custom AI Endpoint Modal */}
+      <CustomAIModal
+        isOpen={isCustomAIOpen}
+        onClose={() => setIsCustomAIOpen(false)}
+        onEndpointSaved={(newEndpoint: AIEndpoint) => {
+          const generatedModelOptions: AIModelOption[] = newEndpoint.models.map((m) => ({
+            id: m.id,
+            modelId: m.modelId,
+            displayName: `${m.displayName} (${newEndpoint.name})`,
+            provider: newEndpoint.baseUrl,
+          }));
+
+          setModelsList((prev) => [...generatedModelOptions, ...prev]);
+          if (generatedModelOptions[0]) {
+            setSelectedModelId(generatedModelOptions[0].id);
+          }
+        }}
+      />
     </div>
   );
 }
