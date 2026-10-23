@@ -280,6 +280,7 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
                 onEdgesChange={onEdgesChange}
                 onNodeClick={(_, node) => setSelectedNodeId(node.id)}
                 fitView
+                proOptions={{ hideAttribution: true }}
               >
                 <Background color="#16243b" gap={20} size={1.5} />
                 <Controls className="!bg-[#0b1320] !border-[#16243b] !rounded-xl overflow-hidden [&>button]:!bg-[#0b1320] [&>button]:!border-[#16243b] [&>button]:!fill-slate-300 hover:[&>button]:!bg-slate-800" />
