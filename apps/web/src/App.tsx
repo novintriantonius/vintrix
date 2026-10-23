@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -9,157 +9,228 @@ import {
   type Edge,
   type OnNodesChange,
   type OnEdgesChange,
+  useReactFlow,
+  ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Code2, Layers, Search, Server, Box } from 'lucide-react';
+import { Layers, Box, ArrowLeft, GitFork, MessageSquareCode, Share2 } from 'lucide-react';
+import { Nav, Hero } from './components/landing/HeroSection';
+import {
+  FeaturesSection,
+  HowItWorksSection,
+  OpenSourceSection,
+  CtaSection,
+  Footer,
+} from './components/landing/Sections';
+import { CustomCodeNode, type CodeNodeData, type NodeKind } from './components/graph/CustomCodeNode';
+import { INITIAL_WORKSPACE_NODES, INITIAL_WORKSPACE_EDGES } from './components/graph/mockData';
+import { GraphToolbar } from './components/graph/GraphToolbar';
+import { SidebarInspector } from './components/graph/SidebarInspector';
+import { ChatboxView } from './components/chat/ChatboxView';
+import { AddSourceModal } from './components/sources/AddSourceModal';
 
-const initialNodes: Node[] = [
-  {
-    id: 'api-1',
-    data: { label: 'AuthController (API)' },
-    position: { x: 50, y: 100 },
-    style: { background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #89b4fa', borderRadius: '8px', padding: '12px' },
-  },
-  {
-    id: 'srv-1',
-    data: { label: 'AuthService (Service)' },
-    position: { x: 300, y: 100 },
-    style: { background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #a6e3a1', borderRadius: '8px', padding: '12px' },
-  },
-  {
-    id: 'repo-1',
-    data: { label: 'UserRepository (Database)' },
-    position: { x: 550, y: 100 },
-    style: { background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #f9e2af', borderRadius: '8px', padding: '12px' },
-  },
-  {
-    id: 'sec-1',
-    data: { label: 'CryptoEngine (AES-256-GCM)' },
-    position: { x: 300, y: 250 },
-    style: { background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #f38ba8', borderRadius: '8px', padding: '12px' },
-  },
-];
+const nodeTypes = {
+  codeNode: CustomCodeNode,
+};
 
-const initialEdges: Edge[] = [
-  { id: 'e1-2', source: 'api-1', target: 'srv-1', animated: true, style: { stroke: '#89b4fa' } },
-  { id: 'e2-3', source: 'srv-1', target: 'repo-1', animated: true, style: { stroke: '#a6e3a1' } },
-  { id: 'e2-4', source: 'srv-1', target: 'sec-1', animated: true, style: { stroke: '#f38ba8' } },
-];
+function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }) {
+  const [workspaceTab, setWorkspaceTab] = useState<'graph' | 'chat'>('graph');
+  const [nodes, setNodes] = useState<Node[]>(INITIAL_WORKSPACE_NODES as unknown as Node[]);
+  const [edges, setEdges] = useState<Edge[]>(INITIAL_WORKSPACE_EDGES);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>(INITIAL_WORKSPACE_NODES[0].id);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
+  const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
+  const [sourcesCount, setSourcesCount] = useState({ git: 1, ssh: 1 });
 
-export default function App() {
-  const [nodes, setNodes] = useState<Node[]>(initialNodes);
-  const [edges, setEdges] = useState<Edge[]>(initialEdges);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(initialNodes[0]);
-  const [activeTab, setActiveTab] = useState<'info' | 'files'>('info');
+  const { fitView } = useReactFlow();
 
-  const onNodesChange: OnNodesChange = (changes) =>
-    setNodes((nds) => applyNodeChanges(changes, nds));
-  const onEdgesChange: OnEdgesChange = (changes) =>
-    setEdges((eds) => applyEdgeChanges(changes, eds));
+  const onNodesChange: OnNodesChange = useCallback(
+    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    []
+  );
+  const onEdgesChange: OnEdgesChange = useCallback(
+    (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    []
+  );
+
+  // Filtered nodes based on search & layer kind
+  const filteredNodes = useMemo(() => {
+    return nodes.filter((node) => {
+      const data = node.data as unknown as CodeNodeData;
+      if (!data) return true;
+
+      const matchesKind = selectedKind === 'all' || data.kind === selectedKind;
+      const matchesSearch =
+        !searchQuery ||
+        data.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        data.filePath.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        data.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (data.tags && data.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
+
+      return matchesKind && matchesSearch;
+    });
+  }, [nodes, selectedKind, searchQuery]);
+
+  const allNodeDataList = useMemo(() => {
+    return nodes.map((n) => n.data as unknown as CodeNodeData);
+  }, [nodes]);
+
+  const selectedNodeData = useMemo(() => {
+    const found = nodes.find((n) => n.id === selectedNodeId);
+    return found ? (found.data as unknown as CodeNodeData) : null;
+  }, [nodes, selectedNodeId]);
+
+  const handleSelectNodeByPath = (path: string) => {
+    const target = nodes.find((n) => (n.data as unknown as CodeNodeData)?.filePath === path);
+    if (target) {
+      setSelectedNodeId(target.id);
+    }
+  };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', background: '#0a0a0c', color: '#e0e0e0', fontFamily: 'system-ui, sans-serif' }}>
+    <div className="flex h-screen w-screen bg-[#050a10] text-[#e0e0e0] font-sans overflow-hidden">
       {/* Top Header */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '48px', background: '#111116', borderBottom: '1px solid #22222b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', zIndex: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '16px', color: '#d4a574' }}>
-          <Box size={20} />
-          <span>Vintrix</span>
-          <span style={{ fontSize: '11px', color: '#888', background: '#222', padding: '2px 6px', borderRadius: '4px' }}>workspace: default</span>
-        </div>
-        <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: '#aaa' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Server size={14} /> Engine: XERJ (Ready)</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Layers size={14} /> Nodes: {nodes.length}</span>
-        </div>
-      </div>
-
-      {/* Main Graph Canvas (75%) */}
-      <div style={{ flex: 1, height: 'calc(100vh - 48px)', marginTop: '48px', position: 'relative' }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={(_, node) => setSelectedNode(node)}
-          fitView
-        >
-          <Background color="#222" gap={16} />
-          <Controls />
-        </ReactFlow>
-
-        {/* Bottom Sliding Code Snippet Panel */}
-        {selectedNode && (
-          <div style={{ position: 'absolute', bottom: 12, left: 16, right: 380, background: '#111116ee', backdropFilter: 'blur(8px)', border: '1px solid #282834', borderRadius: '8px', padding: '12px', zIndex: 5 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#d4a574' }}>
-                <Code2 size={14} /> Selected Element: {String(selectedNode.data?.label || selectedNode.id)}
-              </span>
-              <span style={{ fontSize: '11px', color: '#888' }}>lines: 24-89 • file:line precision</span>
-            </div>
-            <pre style={{ margin: 0, padding: '8px', background: '#0a0a0d', borderRadius: '4px', fontSize: '11px', color: '#a6e3a1', overflowX: 'auto' }}>
-{`// AST Parsed definition via XERJ
-export class ${String(selectedNode.data?.label || '').split(' ')[0]} {
-  // ISO-27001 Cryptographic validation & service linkage
-  async execute() { return true; }
-}`}
-            </pre>
+      <header className="absolute top-0 left-0 right-0 h-12 bg-[#070b12] border-b border-white/[0.08] flex items-center justify-between px-4 z-30">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBackToLanding}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-100 bg-white/[0.04] hover:bg-white/[0.08] px-2.5 py-1 rounded-md border border-white/[0.06] transition-colors"
+          >
+            <ArrowLeft size={13} /> Back to Landing
+          </button>
+          <div className="w-px h-3.5 bg-white/[0.08]" />
+          <div className="flex items-center gap-2 font-semibold text-xs text-slate-100">
+            <Box size={16} className="text-sky-400" />
+            <span>Vintrix Workspace</span>
+            <span className="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.06]">
+              vintrix-monorepo (main)
+            </span>
           </div>
+
+          {/* Mode Switcher: Knowledge Graph vs AI Chatbox */}
+          <div className="ml-2 flex items-center bg-[#0d1422] border border-white/[0.06] p-0.5 rounded-lg">
+            <button
+              onClick={() => setWorkspaceTab('graph')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                workspaceTab === 'graph'
+                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Share2 size={12} />
+              <span>Knowledge Graph</span>
+            </button>
+            <button
+              onClick={() => setWorkspaceTab('chat')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                workspaceTab === 'chat'
+                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <MessageSquareCode size={12} />
+              <span>AI Chatbox</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+          <button
+            onClick={() => setIsAddSourceOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition-all font-sans font-medium text-xs"
+          >
+            <GitFork size={13} />
+            <span>+ Add Source</span>
+          </button>
+          <span className="flex items-center gap-1.5 text-slate-400">
+            Sources: {sourcesCount.git} Git, {sourcesCount.ssh} SSH
+          </span>
+          <span className="flex items-center gap-1.5 text-slate-400">
+            <Layers size={13} /> Nodes: {nodes.length}
+          </span>
+        </div>
+      </header>
+
+      {/* Workspace Content: Graph Canvas OR AI Chatbox */}
+      <div className="flex-1 h-[calc(100vh-48px)] mt-12 relative flex">
+        {workspaceTab === 'graph' ? (
+          <>
+            <div className="flex-1 h-full relative">
+              <GraphToolbar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                selectedKind={selectedKind}
+                onKindSelect={setSelectedKind}
+                nodeCount={filteredNodes.length}
+                totalNodes={nodes.length}
+                onResetView={() => fitView({ padding: 0.2, duration: 600 })}
+              />
+
+              <ReactFlow
+                nodes={filteredNodes}
+                edges={edges}
+                nodeTypes={nodeTypes}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+                fitView
+              >
+                <Background color="#16243b" gap={20} size={1.5} />
+                <Controls className="!bg-[#0b1320] !border-[#16243b] !rounded-xl overflow-hidden [&>button]:!bg-[#0b1320] [&>button]:!border-[#16243b] [&>button]:!fill-slate-300 hover:[&>button]:!bg-slate-800" />
+              </ReactFlow>
+            </div>
+
+            {/* Right Sidebar Inspector */}
+            <SidebarInspector
+              selectedNode={selectedNodeData}
+              onSelectNodeByPath={handleSelectNodeByPath}
+              allNodes={allNodeDataList}
+            />
+          </>
+        ) : (
+          <ChatboxView />
         )}
       </div>
 
-      {/* Right Sidebar (360px) */}
-      <div style={{ width: '360px', height: 'calc(100vh - 48px)', marginTop: '48px', background: '#111116', borderLeft: '1px solid #22222b', display: 'flex', flexDirection: 'column' }}>
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #22222b' }}>
-          <button
-            onClick={() => setActiveTab('info')}
-            style={{ flex: 1, padding: '10px', background: activeTab === 'info' ? '#181820' : 'transparent', color: activeTab === 'info' ? '#d4a574' : '#888', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
-          >
-            Node Info
-          </button>
-          <button
-            onClick={() => setActiveTab('files')}
-            style={{ flex: 1, padding: '10px', background: activeTab === 'files' ? '#181820' : 'transparent', color: activeTab === 'files' ? '#d4a574' : '#888', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
-          >
-            File Explorer
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
-          {activeTab === 'info' ? (
-            <div>
-              <h3 style={{ fontSize: '14px', margin: '0 0 12px 0', color: '#fff' }}>Component Overview</h3>
-              {selectedNode ? (
-                <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div><strong style={{ color: '#888' }}>Identifier:</strong> {selectedNode.id}</div>
-                  <div><strong style={{ color: '#888' }}>Label:</strong> {String(selectedNode.data?.label)}</div>
-                  <div><strong style={{ color: '#888' }}>Architecture Layer:</strong> {selectedNode.id.startsWith('api') ? 'API' : selectedNode.id.startsWith('srv') ? 'Service' : 'Data'}</div>
-                  <div style={{ marginTop: '12px', padding: '10px', background: '#181820', borderRadius: '6px', border: '1px solid #282834' }}>
-                    <div style={{ color: '#d4a574', marginBottom: '4px', fontWeight: 500 }}>Plain-English Summary</div>
-                    <div style={{ color: '#aaa', lineHeight: 1.4 }}>Komponen ini bertanggung jawab atas alur logic proses request dan berelasi langsung dengan service layer codebase.</div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ color: '#666', fontSize: '12px' }}>Pilih salah satu node pada graph untuk melihat detail.</div>
-              )}
-            </div>
-          ) : (
-            <div style={{ fontSize: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', padding: '6px 8px', background: '#181820', borderRadius: '4px' }}>
-                <Search size={14} color="#888" />
-                <input placeholder="Filter files..." style={{ background: 'transparent', border: 'none', color: '#eee', outline: 'none', width: '100%', fontSize: '12px' }} />
-              </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px', color: '#aaa' }}>
-                <li style={{ cursor: 'pointer' }}>📁 src/auth/</li>
-                <li style={{ paddingLeft: '16px', color: '#89b4fa' }}>📄 controller.ts</li>
-                <li style={{ paddingLeft: '16px', color: '#a6e3a1' }}>📄 service.ts</li>
-                <li style={{ cursor: 'pointer' }}>📁 src/user/</li>
-                <li style={{ paddingLeft: '16px', color: '#f9e2af' }}>📄 repository.ts</li>
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Connect Code Source Modal */}
+      <AddSourceModal
+        isOpen={isAddSourceOpen}
+        onClose={() => setIsAddSourceOpen(false)}
+        onSourceAdded={(newSource) => {
+          setSourcesCount((prev) => ({
+            ...prev,
+            [newSource.type]: prev[newSource.type] + 1,
+          }));
+        }}
+      />
     </div>
   );
 }
+
+export default function App() {
+  const [view, setView] = useState<'landing' | 'app'>('landing');
+
+  if (view === 'landing') {
+    return (
+      <div className="min-h-screen bg-[#050a10] text-[#f8fafc] selection:bg-brand-500/20 selection:text-brand-300">
+        <Nav onOpenApp={() => setView('app')} />
+        <main>
+          <Hero onOpenApp={() => setView('app')} />
+          <FeaturesSection />
+          <HowItWorksSection />
+          <OpenSourceSection />
+          <CtaSection onOpenApp={() => setView('app')} />
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  return (
+    <ReactFlowProvider>
+      <WorkspaceContainer onBackToLanding={() => setView('landing')} />
+    </ReactFlowProvider>
+  );
+}
+

@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vintrix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vintrix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vintrix_secret_pwd}
+      POSTGRES_DB: ${POSTGRES_DB:-vintrix_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vintrix} -d ${POSTGRES_DB:-vintrix_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vintrix-net
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: vintrix-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://${POSTGRES_USER:-vintrix}:${POSTGRES_PASSWORD:-vintrix_secret_pwd}@postgres:5432/${POSTGRES_DB:-vintrix_db}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - vintrix-net
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: vintrix-web
+    restart: unless-stopped
+    networks:
+      - vintrix-net
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: vintrix-gateway
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    volumes:
+      - ./nginx/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - web
+    networks:
+      - vintrix-net
+
+volumes:
+  postgres_data:
+
+networks:
+  vintrix-net:
+    driver: bridge

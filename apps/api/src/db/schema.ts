@@ -109,3 +109,17 @@ export const chatMessages = pgTable('chat_messages', {
   content:   text('content').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// ─── Codebase Knowledge Nodes ─────────────────────────────────────────────────
+export const knowledgeNodes = pgTable('knowledge_nodes', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  workspaceId:  uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  codeSourceId: uuid('code_source_id').references(() => codeSources.id, { onDelete: 'cascade' }),
+  label:        text('label').notNull(),
+  kind:         text('kind').notNull(), // 'controller' | 'service' | 'database' | 'security' | 'gateway'
+  filePath:     text('file_path').notNull(),
+  summary:      text('summary'),
+  metadata:     text('metadata'), // JSON stringified node details / AST stats
+  createdAt:    timestamp('created_at').defaultNow().notNull(),
+});
+
