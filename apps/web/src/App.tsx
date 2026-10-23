@@ -28,6 +28,11 @@ import { GraphToolbar } from './components/graph/GraphToolbar';
 import { SidebarInspector } from './components/graph/SidebarInspector';
 import { ChatboxView } from './components/chat/ChatboxView';
 import { AddSourceModal } from './components/sources/AddSourceModal';
+import {
+  ManageSourcesModal,
+  INITIAL_WORKSPACE_SOURCES,
+  type CodeSourceItem,
+} from './components/sources/ManageSourcesModal';
 
 const nodeTypes = {
   codeNode: CustomCodeNode,
@@ -42,9 +47,37 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
-  const [sourcesCount, setSourcesCount] = useState({ git: 2, ssh: 1 });
+  const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
+  const [sourcesList, setSourcesList] = useState<CodeSourceItem[]>(INITIAL_WORKSPACE_SOURCES);
 
   const { fitView } = useReactFlow();
+
+  const gitSourcesCount = sourcesList.filter((s) => s.type === 'git').length;
+  const sshSourcesCount = sourcesList.filter((s) => s.type === 'ssh').length;
+
+  const handleDeleteSource = (sourceId: string) => {
+    const targetSource = sourcesList.find((s) => s.id === sourceId);
+    setSourcesList((prev) => prev.filter((s) => s.id !== sourceId));
+    if (targetSource) {
+      // Remove associated nodes and edges
+      setNodes((prev) =>
+        prev.filter((node) => {
+          const data = node.data as unknown as CodeNodeData;
+          return data?.sourceName !== targetSource.name;
+        })
+      );
+    }
+  };
+
+  const handleTriggerReindex = (sourceId: string) => {
+    setSourcesList((prev) =>
+      prev.map((s) =>
+        s.id === sourceId
+          ? { ...s, lastSyncedAt: 'Just now', status: 'synced' }
+          : s
+      )
+    );
+  };
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -159,9 +192,15 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
             <GitFork size={13} />
             <span>+ Add Source</span>
           </button>
-          <span className="flex items-center gap-1.5 text-slate-400">
-            Sources: {sourcesCount.git} Git, {sourcesCount.ssh} SSH
-          </span>
+          <button
+            onClick={() => setIsManageSourcesOpen(true)}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-sky-300"
+            title="Click to manage, re-index, or delete connected sources"
+          >
+            <span>
+              Sources: {gitSourcesCount} Git, {sshSourcesCount} SSH
+            </span>
+          </button>
           <span className="flex items-center gap-1.5 text-slate-400">
             <Layers size={13} /> Nodes: {nodes.length}
           </span>
@@ -217,11 +256,29 @@ function WorkspaceContainer({ onBackToLanding }: { onBackToLanding: () => void }
         isOpen={isAddSourceOpen}
         onClose={() => setIsAddSourceOpen(false)}
         onSourceAdded={(newSource) => {
-          setSourcesCount((prev) => ({
-            ...prev,
-            [newSource.type]: prev[newSource.type] + 1,
-          }));
+          const item: CodeSourceItem = {
+            id: `src-${Date.now()}`,
+            name: newSource.name,
+            type: newSource.type,
+            location: newSource.type === 'git' ? 'github.com/vintrix/new-repo' : 'root@remote-host',
+            branchOrPort: newSource.type === 'git' ? 'main' : 'Port 22',
+            indexPaths: ['src/'],
+            status: 'synced',
+            lastSyncedAt: 'Just now',
+            nodesCount: 1,
+          };
+          setSourcesList((prev) => [item, ...prev]);
         }}
+      />
+
+      {/* Manage Workspace Sources Modal */}
+      <ManageSourcesModal
+        isOpen={isManageSourcesOpen}
+        onClose={() => setIsManageSourcesOpen(false)}
+        sources={sourcesList}
+        onOpenAddModal={() => setIsAddSourceOpen(true)}
+        onDeleteSource={handleDeleteSource}
+        onTriggerReindex={handleTriggerReindex}
       />
     </div>
   );
