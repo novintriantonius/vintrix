@@ -78,7 +78,7 @@ export const aiRouter = new Elysia({ prefix: '/ai' })
     },
   )
   // List chat sessions for a workspace
-  .get('/sessions/:workspaceId', async ({ params }) => {
+  .get('/workspaces/:workspaceId/sessions', async ({ params }) => {
     return db
       .select()
       .from(chatSessions)
