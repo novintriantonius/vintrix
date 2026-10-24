@@ -7,6 +7,7 @@ import {
   Cpu,
   GitCommit,
   CheckCircle,
+  Flame,
 } from '@phosphor-icons/react';
 
 export type NodeKind = 'controller' | 'service' | 'database' | 'security' | 'gateway';
@@ -24,6 +25,9 @@ export interface CodeNodeData {
   summary: string;
   codeSnippet: string;
   tags?: string[];
+  inDegree?: number;
+  outDegree?: number;
+  hotspotScore?: number;
   [key: string]: unknown;
 }
 
@@ -110,9 +114,20 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
             )}
           </div>
 
-          <div className="flex items-center gap-1 text-[10px] text-emerald-400/90 font-mono shrink-0">
-            <CheckCircle size={11} weight="fill" />
-            <span className="text-[9px]">SYNC</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {nodeData.hotspotScore !== undefined && nodeData.hotspotScore >= 4 && (
+              <span
+                className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-0.5 font-bold"
+                title={`Hotspot Centrality Score: ${nodeData.hotspotScore} (High coupling)`}
+              >
+                <Flame size={10} weight="fill" className="text-amber-400" />
+                <span>HOT</span>
+              </span>
+            )}
+            <div className="flex items-center gap-1 text-[10px] text-emerald-400/90 font-mono">
+              <CheckCircle size={11} weight="fill" />
+              <span className="text-[9px]">SYNC</span>
+            </div>
           </div>
         </div>
 
@@ -132,9 +147,15 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
             <span className="truncate">{nodeData.filePath}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <span>{nodeData.methodCount}m</span>
+            {nodeData.inDegree !== undefined && nodeData.outDegree !== undefined ? (
+              <span title={`In-degree: ${nodeData.inDegree} dependents | Out-degree: ${nodeData.outDegree} dependencies`}>
+                ↓{nodeData.inDegree} ↑{nodeData.outDegree}
+              </span>
+            ) : (
+              <span>{nodeData.dependencyCount}d</span>
+            )}
             <span>•</span>
-            <span>{nodeData.dependencyCount}d</span>
+            <span>{nodeData.methodCount}m</span>
           </div>
         </div>
       </div>

@@ -451,9 +451,40 @@ function WorkspaceContainer({
     return list;
   }, [sourcesList, nodes]);
 
+  // Compute node in-degree, out-degree, and hotspot scores based on graph edges
+  const enrichedNodes = useMemo(() => {
+    // Map degrees
+    const inDegrees: Record<string, number> = {};
+    const outDegrees: Record<string, number> = {};
+
+    edges.forEach((e) => {
+      outDegrees[e.source] = (outDegrees[e.source] || 0) + 1;
+      inDegrees[e.target] = (inDegrees[e.target] || 0) + 1;
+    });
+
+    return nodes.map((node) => {
+      const data = node.data as unknown as CodeNodeData;
+      if (!data) return node;
+
+      const inDegree = inDegrees[node.id] || 0;
+      const outDegree = outDegrees[node.id] || 0;
+      const hotspotScore = inDegree + outDegree;
+
+      return {
+        ...node,
+        data: {
+          ...data,
+          inDegree,
+          outDegree,
+          hotspotScore,
+        },
+      };
+    });
+  }, [nodes, edges]);
+
   // Filtered nodes based on search, layer kind, & source scope
   const filteredNodes = useMemo(() => {
-    return nodes.filter((node) => {
+    return enrichedNodes.filter((node) => {
       const data = node.data as unknown as CodeNodeData;
       if (!data) return true;
 
@@ -477,9 +508,9 @@ function WorkspaceContainer({
   }, [nodes]);
 
   const selectedNodeData = useMemo(() => {
-    const found = nodes.find((n) => n.id === selectedNodeId);
+    const found = enrichedNodes.find((n) => n.id === selectedNodeId);
     return found ? (found.data as unknown as CodeNodeData) : null;
-  }, [nodes, selectedNodeId]);
+  }, [enrichedNodes, selectedNodeId]);
 
   const focusNodeOnCanvas = useCallback(
     (nodeId: string) => {

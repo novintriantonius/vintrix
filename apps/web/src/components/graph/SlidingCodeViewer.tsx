@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   ChevronDown,
   Terminal,
+  Flame,
 } from 'lucide-react';
 import type { CodeNodeData } from './CustomCodeNode';
 
@@ -116,9 +117,28 @@ export function SlidingCodeViewer({ node, isOpen, onClose }: SlidingCodeViewerPr
         <div className="flex items-center gap-3">
           <span>Lines: {lines.length}</span>
           <span>•</span>
-          <span>Complexity: {node.methodCount} methods</span>
-          <span>•</span>
-          <span>Deps: {node.dependencyCount} cross-repo references</span>
+          <span>Methods: {node.methodCount}</span>
+          {node.inDegree !== undefined && (
+            <>
+              <span>•</span>
+              <span className="text-sky-400">Dependents (In): {node.inDegree}</span>
+            </>
+          )}
+          {node.outDegree !== undefined && (
+            <>
+              <span>•</span>
+              <span className="text-purple-400">Dependencies (Out): {node.outDegree}</span>
+            </>
+          )}
+          {node.hotspotScore !== undefined && node.hotspotScore >= 4 && (
+            <>
+              <span>•</span>
+              <span className="text-amber-400 font-semibold flex items-center gap-0.5">
+                <Flame size={11} className="text-amber-400" />
+                Hotspot (Coupling: {node.hotspotScore})
+              </span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-1.5 text-slate-400">
           <Terminal size={11} className="text-sky-400" />
