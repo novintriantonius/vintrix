@@ -3,7 +3,10 @@ import { db } from '../db/client';
 import { codeSources, sshSourceDetails, gitSourceDetails, knowledgeNodes, knowledgeEdges } from '../db/schema';
 import { encryptCredential, decryptCredential } from '../services/crypto';
 import { testSSHConnection, listRemoteDirectory } from '../services/ssh';
+import { scanCodebaseDirectory } from '../services/astScanner';
 import { eq } from 'drizzle-orm';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY ?? 'vintrix-dev-master-key-must-be-32-chars!!';
 
@@ -49,18 +52,94 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
     await db.delete(codeSources).where(eq(codeSources.id, params.id));
     return { success: true };
   })
-  // ─── Trigger re-index (stub — marks isIndexed reset for re-run) ───────────────
+  // ─── Trigger re-index with real AST Scanner ─────────────────────────────
   .post('/:id/reindex', async ({ params, set }) => {
     const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, params.id));
     if (!existing) {
       set.status = 404;
       return { message: 'Source not found' };
     }
+
+    // Determine target local directory to scan if applicable, or project directory
+    // If the source name or path matches a local repo/workspace or vintrix itself
+    const rootRepoDir = path.resolve(process.cwd(), '../..');
+    let targetScanDir = rootRepoDir;
+
+    // Check if Git source has specific path or cloned dir
+    const [gitDetails] = await db
+      .select()
+      .from(gitSourceDetails)
+      .where(eq(gitSourceDetails.codeSourceId, existing.id));
+
+    if (gitDetails && gitDetails.indexPaths && gitDetails.indexPaths.length > 0) {
+      const customPath = path.resolve(rootRepoDir, gitDetails.indexPaths[0]);
+      if (fs.existsSync(customPath)) {
+        targetScanDir = customPath;
+      }
+    }
+
+    // Run AST parser
+    const { nodes: scannedNodes, edges: scannedEdges } = scanCodebaseDirectory(targetScanDir);
+
+    if (scannedNodes.length > 0) {
+      // 1. Clear previous nodes & edges for this source
+      await db.delete(knowledgeNodes).where(eq(knowledgeNodes.codeSourceId, existing.id));
+
+      // 2. Insert scanned AST nodes
+      const insertedNodesMap = new Map<string, string>(); // filePath -> db node id
+
+      for (const node of scannedNodes) {
+        const [inserted] = await db
+          .insert(knowledgeNodes)
+          .values({
+            workspaceId: existing.workspaceId,
+            codeSourceId: existing.id,
+            label: node.label,
+            kind: node.kind,
+            filePath: node.filePath,
+            summary: node.summary,
+            metadata: JSON.stringify({
+              lines: node.lines,
+              methodCount: node.methodCount,
+              dependencyCount: node.dependencyCount,
+              tags: node.tags,
+              codeSnippet: node.codeSnippet,
+            }),
+          })
+          .returning();
+
+        if (inserted) {
+          insertedNodesMap.set(node.filePath, inserted.id);
+        }
+      }
+
+      // 3. Insert scanned cross-module edges
+      for (const edge of scannedEdges) {
+        const sourceId = insertedNodesMap.get(edge.sourceFilePath);
+        const targetId = insertedNodesMap.get(edge.targetFilePath);
+
+        if (sourceId && targetId && sourceId !== targetId) {
+          await db.insert(knowledgeEdges).values({
+            workspaceId: existing.workspaceId,
+            sourceNodeId: sourceId,
+            targetNodeId: targetId,
+            relationType: edge.relationType,
+          });
+        }
+      }
+    }
+
     await db
       .update(codeSources)
       .set({ isIndexed: true, lastIndexAt: new Date() })
       .where(eq(codeSources.id, params.id));
-    return { success: true, message: 'Re-indexing triggered successfully' };
+
+    return {
+      success: true,
+      message: `Re-indexing complete. Scanned ${scannedNodes.length} AST nodes and ${scannedEdges.length} dependency edges.`,
+      nodesScanned: scannedNodes.length,
+      edgesScanned: scannedEdges.length,
+    };
   })
   // Test connection without saving
   .post(
