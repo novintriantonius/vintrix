@@ -8,6 +8,8 @@ import {
   Plus,
   CheckCircle2,
   HardDrive,
+  Webhook,
+  Check,
 } from 'lucide-react';
 import { Modal } from '../common';
 
@@ -77,6 +79,7 @@ export function ManageSourcesModal({
   onTriggerReindex,
 }: ManageSourcesModalProps) {
   const [reindexingId, setReindexingId] = useState<string | null>(null);
+  const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
 
   const handleSync = (id: string) => {
     setReindexingId(id);
@@ -84,6 +87,15 @@ export function ManageSourcesModal({
     setTimeout(() => {
       setReindexingId(null);
     }, 1200);
+  };
+
+  const copyWebhookUrl = (id: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const apiUrl = origin.replace(':3000', ':3001');
+    const webhookUrl = `${apiUrl}/sources/webhook?sourceId=${id}`;
+    navigator.clipboard.writeText(webhookUrl);
+    setCopiedWebhookId(id);
+    setTimeout(() => setCopiedWebhookId(null), 2000);
   };
 
   return (
@@ -162,6 +174,21 @@ export function ManageSourcesModal({
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {source.type === 'git' && (
+                    <button
+                      type="button"
+                      onClick={() => copyWebhookUrl(source.id)}
+                      title="Copy Git Webhook URL for GitHub/GitLab automated push re-indexing"
+                      aria-label="Copy Webhook URL"
+                      className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-sky-300 transition-colors border border-white/[0.06] flex items-center gap-1"
+                    >
+                      {copiedWebhookId === source.id ? (
+                        <Check size={13} className="text-emerald-400" />
+                      ) : (
+                        <Webhook size={13} />
+                      )}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleSync(source.id)}

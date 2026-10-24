@@ -9,8 +9,163 @@ import { eq } from 'drizzle-orm';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import crypto from 'node:crypto';
 
 const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY ?? 'vintrix-dev-master-key-must-be-32-chars!!';
+
+/**
+ * Helper to execute full AST sync and reindexing for a given source
+ */
+export async function executeSourceReindex(sourceId: string): Promise<{
+  success: boolean;
+  message: string;
+  nodesScanned: number;
+  edgesScanned: number;
+}> {
+  const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, sourceId));
+  if (!existing) {
+    throw new Error('Source not found');
+  }
+
+  const cacheRoot = path.join(os.homedir(), '.vintrix', 'repos', existing.id);
+  const rootRepoDir = path.resolve(process.cwd(), '../..');
+  let targetScanDir = rootRepoDir;
+
+  if (existing.type === 'git') {
+    const [gitDetails] = await db
+      .select()
+      .from(gitSourceDetails)
+      .where(eq(gitSourceDetails.codeSourceId, existing.id));
+
+    if (gitDetails && gitDetails.repoUrl) {
+      if (gitDetails.repoUrl.startsWith('/') || gitDetails.repoUrl.startsWith('.')) {
+        const localPath = path.resolve(rootRepoDir, gitDetails.repoUrl);
+        if (fs.existsSync(localPath)) {
+          targetScanDir = localPath;
+        }
+      } else {
+        const token = gitDetails.encryptedToken
+          ? await decryptCredential(gitDetails.encryptedToken, MASTER_KEY)
+          : null;
+        try {
+          await syncGitRepository({
+            repoUrl: gitDetails.repoUrl,
+            branch: gitDetails.branch || 'main',
+            targetDir: cacheRoot,
+            token,
+          });
+          targetScanDir = cacheRoot;
+        } catch (syncErr: any) {
+          console.warn(`Git sync warning (${gitDetails.repoUrl}):`, syncErr.message);
+          if (gitDetails.indexPaths && gitDetails.indexPaths.length > 0) {
+            const customPath = path.resolve(rootRepoDir, gitDetails.indexPaths[0]);
+            if (fs.existsSync(customPath)) targetScanDir = customPath;
+          }
+        }
+      }
+    }
+  } else if (existing.type === 'ssh') {
+    const [sshDetails] = await db
+      .select()
+      .from(sshSourceDetails)
+      .where(eq(sshSourceDetails.codeSourceId, existing.id));
+
+    if (sshDetails && sshDetails.indexPaths && sshDetails.indexPaths.length > 0) {
+      const password = sshDetails.encryptedPassword
+        ? await decryptCredential(sshDetails.encryptedPassword, MASTER_KEY)
+        : undefined;
+      const privateKey = sshDetails.encryptedPrivKey
+        ? await decryptCredential(sshDetails.encryptedPrivKey, MASTER_KEY)
+        : undefined;
+      const passphrase = sshDetails.encryptedPassphrase
+        ? await decryptCredential(sshDetails.encryptedPassphrase, MASTER_KEY)
+        : undefined;
+
+      try {
+        await syncRemoteSSHDirectory(
+          {
+            host: sshDetails.host,
+            port: sshDetails.port,
+            username: sshDetails.username,
+            password,
+            privateKey,
+            passphrase,
+          },
+          sshDetails.indexPaths[0],
+          cacheRoot,
+        );
+        targetScanDir = cacheRoot;
+      } catch (sshErr: any) {
+        console.warn(`SSH sync warning (${sshDetails.host}):`, sshErr.message);
+        const customPath = path.resolve(rootRepoDir, sshDetails.indexPaths[0]);
+        if (fs.existsSync(customPath)) targetScanDir = customPath;
+      }
+    }
+  }
+
+  // Run AST parser
+  const { nodes: scannedNodes, edges: scannedEdges } = scanCodebaseDirectory(targetScanDir);
+
+  if (scannedNodes.length > 0) {
+    // 1. Clear previous nodes & edges for this source
+    await db.delete(knowledgeNodes).where(eq(knowledgeNodes.codeSourceId, existing.id));
+
+    // 2. Insert scanned AST nodes
+    const insertedNodesMap = new Map<string, string>();
+
+    for (const node of scannedNodes) {
+      const [inserted] = await db
+        .insert(knowledgeNodes)
+        .values({
+          workspaceId: existing.workspaceId,
+          codeSourceId: existing.id,
+          label: node.label,
+          kind: node.kind,
+          filePath: node.filePath,
+          summary: node.summary,
+          metadata: JSON.stringify({
+            lines: node.lines,
+            methodCount: node.methodCount,
+            dependencyCount: node.dependencyCount,
+            tags: node.tags,
+            codeSnippet: node.codeSnippet,
+          }),
+        })
+        .returning();
+
+      if (inserted) {
+        insertedNodesMap.set(node.filePath, inserted.id);
+      }
+    }
+
+    // 3. Insert scanned cross-module edges
+    for (const edge of scannedEdges) {
+      const sourceId = insertedNodesMap.get(edge.sourceFilePath);
+      const targetId = insertedNodesMap.get(edge.targetFilePath);
+
+      if (sourceId && targetId && sourceId !== targetId) {
+        await db.insert(knowledgeEdges).values({
+          workspaceId: existing.workspaceId,
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          relationType: edge.relationType,
+        });
+      }
+    }
+  }
+
+  await db
+    .update(codeSources)
+    .set({ isIndexed: true, lastIndexAt: new Date() })
+    .where(eq(codeSources.id, existing.id));
+
+  return {
+    success: true,
+    message: `Re-indexing complete. Scanned ${scannedNodes.length} AST nodes and ${scannedEdges.length} dependency edges.`,
+    nodesScanned: scannedNodes.length,
+    edgesScanned: scannedEdges.length,
+  };
+}
 
 export const sourcesRouter = new Elysia({ prefix: '/sources' })
   // ─── List sources for a workspace ───────────────────────────────────────────
@@ -56,156 +211,100 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
   })
   // ─── Trigger re-index with real AST Scanner ─────────────────────────────
   .post('/:id/reindex', async ({ params, set }) => {
-    const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, params.id));
-    if (!existing) {
-      set.status = 404;
-      return { message: 'Source not found' };
+    try {
+      const result = await executeSourceReindex(params.id);
+      return result;
+    } catch (err: any) {
+      if (err.message === 'Source not found') {
+        set.status = 404;
+        return { message: 'Source not found' };
+      }
+      set.status = 500;
+      return { message: err.message };
     }
-
-    // Base cache directory for external synced sources
-    const cacheRoot = path.join(os.homedir(), '.vintrix', 'repos', existing.id);
-    const rootRepoDir = path.resolve(process.cwd(), '../..');
-    let targetScanDir = rootRepoDir;
-
-    if (existing.type === 'git') {
-      const [gitDetails] = await db
-        .select()
-        .from(gitSourceDetails)
-        .where(eq(gitSourceDetails.codeSourceId, existing.id));
-
-      if (gitDetails && gitDetails.repoUrl) {
-        // If repoUrl points to a local directory or matches current vintrix
-        if (gitDetails.repoUrl.startsWith('/') || gitDetails.repoUrl.startsWith('.')) {
-          const localPath = path.resolve(rootRepoDir, gitDetails.repoUrl);
-          if (fs.existsSync(localPath)) {
-            targetScanDir = localPath;
-          }
-        } else {
-          // Real remote git repo sync
-          const token = gitDetails.encryptedToken
-            ? await decryptCredential(gitDetails.encryptedToken, MASTER_KEY)
-            : null;
-          try {
-            await syncGitRepository({
-              repoUrl: gitDetails.repoUrl,
-              branch: gitDetails.branch || 'main',
-              targetDir: cacheRoot,
-              token,
-            });
-            targetScanDir = cacheRoot;
-          } catch (syncErr: any) {
-            console.warn(`Git sync warning (${gitDetails.repoUrl}):`, syncErr.message);
-            // Fall back to scanning custom path or project dir if local
-            if (gitDetails.indexPaths && gitDetails.indexPaths.length > 0) {
-              const customPath = path.resolve(rootRepoDir, gitDetails.indexPaths[0]);
-              if (fs.existsSync(customPath)) targetScanDir = customPath;
-            }
-          }
-        }
-      }
-    } else if (existing.type === 'ssh') {
-      const [sshDetails] = await db
-        .select()
-        .from(sshSourceDetails)
-        .where(eq(sshSourceDetails.codeSourceId, existing.id));
-
-      if (sshDetails && sshDetails.indexPaths && sshDetails.indexPaths.length > 0) {
-        const password = sshDetails.encryptedPassword
-          ? await decryptCredential(sshDetails.encryptedPassword, MASTER_KEY)
-          : undefined;
-        const privateKey = sshDetails.encryptedPrivKey
-          ? await decryptCredential(sshDetails.encryptedPrivKey, MASTER_KEY)
-          : undefined;
-        const passphrase = sshDetails.encryptedPassphrase
-          ? await decryptCredential(sshDetails.encryptedPassphrase, MASTER_KEY)
-          : undefined;
-
-        try {
-          await syncRemoteSSHDirectory(
-            {
-              host: sshDetails.host,
-              port: sshDetails.port,
-              username: sshDetails.username,
-              password,
-              privateKey,
-              passphrase,
-            },
-            sshDetails.indexPaths[0],
-            cacheRoot,
-          );
-          targetScanDir = cacheRoot;
-        } catch (sshErr: any) {
-          console.warn(`SSH sync warning (${sshDetails.host}):`, sshErr.message);
-          // If remote not reachable in dev, fallback to local path if exists
-          const customPath = path.resolve(rootRepoDir, sshDetails.indexPaths[0]);
-          if (fs.existsSync(customPath)) targetScanDir = customPath;
-        }
-      }
-    }
-
-    // Run AST parser
-    const { nodes: scannedNodes, edges: scannedEdges } = scanCodebaseDirectory(targetScanDir);
-
-    if (scannedNodes.length > 0) {
-      // 1. Clear previous nodes & edges for this source
-      await db.delete(knowledgeNodes).where(eq(knowledgeNodes.codeSourceId, existing.id));
-
-      // 2. Insert scanned AST nodes
-      const insertedNodesMap = new Map<string, string>(); // filePath -> db node id
-
-      for (const node of scannedNodes) {
-        const [inserted] = await db
-          .insert(knowledgeNodes)
-          .values({
-            workspaceId: existing.workspaceId,
-            codeSourceId: existing.id,
-            label: node.label,
-            kind: node.kind,
-            filePath: node.filePath,
-            summary: node.summary,
-            metadata: JSON.stringify({
-              lines: node.lines,
-              methodCount: node.methodCount,
-              dependencyCount: node.dependencyCount,
-              tags: node.tags,
-              codeSnippet: node.codeSnippet,
-            }),
-          })
-          .returning();
-
-        if (inserted) {
-          insertedNodesMap.set(node.filePath, inserted.id);
-        }
-      }
-
-      // 3. Insert scanned cross-module edges
-      for (const edge of scannedEdges) {
-        const sourceId = insertedNodesMap.get(edge.sourceFilePath);
-        const targetId = insertedNodesMap.get(edge.targetFilePath);
-
-        if (sourceId && targetId && sourceId !== targetId) {
-          await db.insert(knowledgeEdges).values({
-            workspaceId: existing.workspaceId,
-            sourceNodeId: sourceId,
-            targetNodeId: targetId,
-            relationType: edge.relationType,
-          });
-        }
-      }
-    }
-
-    await db
-      .update(codeSources)
-      .set({ isIndexed: true, lastIndexAt: new Date() })
-      .where(eq(codeSources.id, params.id));
-
-    return {
-      success: true,
-      message: `Re-indexing complete. Scanned ${scannedNodes.length} AST nodes and ${scannedEdges.length} dependency edges.`,
-      nodesScanned: scannedNodes.length,
-      edgesScanned: scannedEdges.length,
-    };
   })
+  // ─── Incoming Git Webhook Handler (GitHub / GitLab Push) ───────────────────
+  .post(
+    '/webhook',
+    async ({ body, headers, query, set }) => {
+      // 1. Identify target source: by explicit sourceId or by repository clone URL
+      let sourceId = query.sourceId;
+
+      const payload = body as any;
+      const repoUrl =
+        payload?.repository?.clone_url ||
+        payload?.repository?.git_http_url ||
+        payload?.repository?.ssh_url ||
+        payload?.repository?.html_url ||
+        payload?.project?.git_http_url;
+
+      if (!sourceId && repoUrl) {
+        // Match Git source by repoUrl substring
+        const cleanRepo = repoUrl.replace(/\.git$/, '').toLowerCase();
+        const sources = await db
+          .select({
+            id: codeSources.id,
+            repoUrl: gitSourceDetails.repoUrl,
+          })
+          .from(codeSources)
+          .innerJoin(gitSourceDetails, eq(gitSourceDetails.codeSourceId, codeSources.id));
+
+        const matched = sources.find((s) =>
+          cleanRepo.includes(s.repoUrl.replace(/\.git$/, '').toLowerCase()),
+        );
+        if (matched) {
+          sourceId = matched.id;
+        }
+      }
+
+      if (!sourceId) {
+        set.status = 400;
+        return { error: 'No matching code source found for this webhook event. Provide ?sourceId=<uuid>' };
+      }
+
+      // 2. Verify HMAC SHA-256 Secret (if X-Hub-Signature-256 or X-Gitlab-Token is provided)
+      const githubSig = headers['x-hub-signature-256'];
+      const gitlabToken = headers['x-gitlab-token'];
+      const webhookSecret = process.env.GIT_WEBHOOK_SECRET;
+
+      if (webhookSecret && githubSig) {
+        const hmac = crypto.createHmac('sha256', webhookSecret);
+        const digest = 'sha256=' + hmac.update(JSON.stringify(payload)).digest('hex');
+        if (githubSig !== digest) {
+          set.status = 401;
+          return { error: 'Invalid GitHub webhook signature' };
+        }
+      } else if (webhookSecret && gitlabToken) {
+        if (gitlabToken !== webhookSecret) {
+          set.status = 401;
+          return { error: 'Invalid GitLab webhook secret token' };
+        }
+      }
+
+      // 3. Trigger asynchronous background reindex so webhook response doesn't timeout
+      setTimeout(async () => {
+        try {
+          console.log(`[Webhook] Starting automatic re-indexing for source ${sourceId}...`);
+          const res = await executeSourceReindex(sourceId!);
+          console.log(`[Webhook] Finished re-indexing source ${sourceId}:`, res.message);
+        } catch (err: any) {
+          console.error(`[Webhook] Error re-indexing source ${sourceId}:`, err.message);
+        }
+      }, 50);
+
+      return {
+        received: true,
+        sourceId,
+        message: 'Webhook received. Automated AST re-indexing dispatched in background.',
+        event: headers['x-github-event'] || headers['x-gitlab-event'] || 'push',
+      };
+    },
+    {
+      query: t.Object({
+        sourceId: t.Optional(t.String()),
+      }),
+    },
+  )
   // Test connection without saving
   .post(
     '/ssh/test',
