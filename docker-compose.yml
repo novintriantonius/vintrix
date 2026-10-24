@@ -29,8 +29,8 @@ services:
     environment:
       PORT: 4000
       DATABASE_URL: postgres://${POSTGRES_USER:-vintrix}:${POSTGRES_PASSWORD:-vintrix_secret_pwd}@postgres:5432/${POSTGRES_DB:-vintrix_db}
-      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
-      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:-vintrix_default_dev_master_key_32b_!}
+      JWT_SECRET: ${JWT_SECRET:-vintrix-super-secure-jwt-secret-oauth-key-32b}
     networks:
       - vintrix-net
 
