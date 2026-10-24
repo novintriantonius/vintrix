@@ -13,6 +13,7 @@ export interface ScannedASTNode {
   tags: string[];
   codeSnippet: string;
   importedModules: string[];
+  exportedSymbols: string[];
 }
 
 export interface ScannedASTResult {
@@ -339,6 +340,7 @@ export function scanSourceFile(filePath: string, rootDir: string): ScannedASTNod
       tags: exportedSymbols.length > 0 ? exportedSymbols : ['module', kind],
       codeSnippet,
       importedModules,
+      exportedSymbols,
     };
   } catch (err) {
     console.warn(`[AST Scanner] Error scanning ${filePath}:`, err);

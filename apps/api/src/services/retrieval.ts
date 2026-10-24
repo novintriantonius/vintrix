@@ -20,11 +20,14 @@ export interface RetrievedContext {
  */
 export function tokenize(text: string): string[] {
   if (!text) return [];
-  // Split camelCase words as well (e.g. authRouter -> auth router)
-  const expanded = text.replace(/([a-z])([A-Z])/g, '$1 $2');
+  // Split camelCase words and replace forward slashes/dots with spaces
+  const expanded = text
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[/\\.]/g, ' ');
+
   return expanded
     .toLowerCase()
-    .replace(/[^a-z0-9_/-]/g, ' ')
+    .replace(/[^a-z0-9_-]/g, ' ')
     .split(/\s+/)
     .filter((t) => t.length > 1);
 }
@@ -33,7 +36,7 @@ export function tokenize(text: string): string[] {
  * Computes BM25 score for a document against a query term list.
  * k1 = 1.2, b = 0.75
  */
-function computeBM25Score(
+export function computeBM25Score(
   queryTokens: string[],
   docTokens: string[],
   docLen: number,
