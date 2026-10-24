@@ -562,6 +562,85 @@ function WorkspaceContainer({
     }
   };
 
+  // Export Mermaid.js Architecture Diagram
+  const handleExportMermaid = async () => {
+    try {
+      const activeWs = workspacesList.find((w) => w.id === currentWorkspaceId)?.name || 'workspace';
+      const filename = `${activeWs}-architecture.mmd`;
+
+      let mermaidText = `graph TD\n`;
+      mermaidText += `  %% Vintrix Architectural Topology: ${activeWs}\n`;
+      mermaidText += `  %% Generated at: ${new Date().toISOString()}\n\n`;
+
+      // Classes and styles
+      mermaidText += `  classDef controller fill:#0c1c38,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;\n`;
+      mermaidText += `  classDef service fill:#062319,stroke:#34d399,stroke-width:2px,color:#f8fafc;\n`;
+      mermaidText += `  classDef database fill:#271c06,stroke:#fbbf24,stroke-width:2px,color:#f8fafc;\n`;
+      mermaidText += `  classDef security fill:#2c0c14,stroke:#f43f5e,stroke-width:2px,color:#f8fafc;\n`;
+      mermaidText += `  classDef gateway fill:#18153b,stroke:#818cf8,stroke-width:2px,color:#f8fafc;\n\n`;
+
+      // Subgraphs grouped by kind for clean layout
+      const nodesByKind = filteredNodes.reduce((acc, curr) => {
+        const d = curr.data as unknown as CodeNodeData;
+        acc[d.kind] = acc[d.kind] || [];
+        acc[d.kind].push(curr);
+        return acc;
+      }, {} as Record<string, typeof filteredNodes>);
+
+      for (const [kind, groupNodes] of Object.entries(nodesByKind)) {
+        mermaidText += `  subgraph ${kind.toUpperCase()}_LAYER ["${kind.toUpperCase()} LAYER"]\n`;
+        groupNodes.forEach((n) => {
+          const d = n.data as unknown as CodeNodeData;
+          const cleanId = n.id.replace(/[^a-zA-Z0-9_]/g, '_');
+          const cleanLabel = (d.label || n.id).replace(/["[\]()]/g, '');
+          mermaidText += `    ${cleanId}["${cleanLabel}"]:::${d.kind}\n`;
+        });
+        mermaidText += `  end\n\n`;
+      }
+
+      // Edges
+      if (edges.length > 0) {
+        mermaidText += `  %% Relationships\n`;
+        edges.forEach((e) => {
+          const from = e.source.replace(/[^a-zA-Z0-9_]/g, '_');
+          const to = e.target.replace(/[^a-zA-Z0-9_]/g, '_');
+          const edgeLabel = e.label ? String(e.label).replace(/"/g, '') : '';
+          const label = edgeLabel ? `|"${edgeLabel}"|` : '';
+          mermaidText += `  ${from} -->${label} ${to}\n`;
+        });
+      }
+
+      // Copy to clipboard & trigger file download
+      try {
+        await navigator.clipboard.writeText(mermaidText);
+      } catch {
+        // clipboard might be blocked in some iframe contexts
+      }
+
+      const blob = new Blob([mermaidText], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      addToast({
+        type: 'success',
+        title: 'Mermaid Diagram Exported',
+        description: `Copied to clipboard and saved to ${filename}`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Mermaid Export Failed',
+        description: err.message || 'Failed to export Mermaid diagram.',
+      });
+    }
+  };
+
   // Export Architectural Markdown Report
   const handleExportReport = () => {
     try {
@@ -958,6 +1037,7 @@ graph TD
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}
                 onExportPng={handleExportSvg}
+                onExportMermaid={handleExportMermaid}
                 onExportReport={handleExportReport}
               />
 

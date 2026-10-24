@@ -23,6 +23,7 @@ interface GraphToolbarProps {
   totalNodes: number;
   onResetView: () => void;
   onExportPng?: () => void;
+  onExportMermaid?: () => void;
   onExportReport?: () => void;
 }
 
@@ -46,6 +47,7 @@ export function GraphToolbar({
   totalNodes,
   onResetView,
   onExportPng,
+  onExportMermaid,
   onExportReport,
 }: GraphToolbarProps) {
   return (
@@ -133,7 +135,7 @@ export function GraphToolbar({
         </button>
       </div>
 
-      {(onExportPng || onExportReport) && (
+      {(onExportPng || onExportMermaid || onExportReport) && (
         <>
           <div className="h-3.5 w-px bg-white/[0.08] shrink-0" />
           <div className="flex items-center gap-1 shrink-0">
@@ -141,10 +143,20 @@ export function GraphToolbar({
               <button
                 onClick={onExportPng}
                 className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors"
-                title="Export Knowledge Graph view"
+                title="Export Knowledge Graph as Vector SVG"
               >
                 <DownloadSimple size={12} className="text-sky-400" />
-                <span className="hidden sm:inline">Export</span>
+                <span className="hidden sm:inline">SVG</span>
+              </button>
+            )}
+            {onExportMermaid && (
+              <button
+                onClick={onExportMermaid}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors"
+                title="Copy or Export Mermaid.js Architecture Diagram"
+              >
+                <Code size={12} className="text-amber-400" />
+                <span className="hidden sm:inline">Mermaid</span>
               </button>
             )}
             {onExportReport && (
