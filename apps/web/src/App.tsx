@@ -39,7 +39,7 @@ import {
 } from './components/workspace/WorkspaceTeamModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { Modal } from './components/common/Modal';
-import { ToastContainer, type ToastMessage } from './components/common';
+import { ToastContainer, CommandPalette, type ToastMessage } from './components/common';
 import { sourcesApi, workspacesApi, graphApi, authApi, type WorkspaceMemberAPI, type AuthUser, type Workspace } from './services/api';
 
 // Default workspace ID — in production this comes from auth session
@@ -114,6 +114,7 @@ function WorkspaceContainer({
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [sourcesList, setSourcesList] = useState<CodeSourceItem[]>([]);
   const [membersList, setMembersList] = useState<WorkspaceMember[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -126,6 +127,18 @@ function WorkspaceContainer({
   const handleDismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Global shortcut: Cmd+K / Ctrl+K to toggle Command Palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Fetch workspaces list
   useEffect(() => {
@@ -476,9 +489,59 @@ function WorkspaceContainer({
             </div>
             <span className="font-bold text-sm tracking-tight text-white">Vintrix</span>
           </button>
-          <span className="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/[0.06] hidden md:inline truncate max-w-[120px]">
-            vintrix-monorepo
-          </span>
+          <div className="relative">
+            <button
+              onClick={() => setIsWorkspaceDropdownOpen((prev) => !prev)}
+              className="flex items-center gap-1.5 text-[11px] font-mono text-slate-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] px-2 py-1 rounded border border-white/[0.08] transition-colors truncate max-w-[150px]"
+              title="Switch Workspace"
+            >
+              <span className="truncate">
+                {workspacesList.find((w) => w.id === currentWorkspaceId)?.name || 'vintrix-monorepo'}
+              </span>
+              <ChevronDown size={11} className="shrink-0 text-slate-400" />
+            </button>
+
+            {isWorkspaceDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1.5 w-56 bg-[#090e18] border border-white/10 rounded-xl shadow-2xl py-1.5 z-50">
+                <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Workspaces
+                </div>
+                {workspacesList.map((ws) => (
+                  <button
+                    key={ws.id}
+                    onClick={() => {
+                      setCurrentWorkspaceId(ws.id);
+                      setIsWorkspaceDropdownOpen(false);
+                      addToast({
+                        type: 'info',
+                        title: 'Workspace Switched',
+                        description: `Active workspace changed to "${ws.name}".`,
+                      });
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs font-mono transition-colors flex items-center justify-between ${
+                      ws.id === currentWorkspaceId
+                        ? 'text-sky-300 bg-sky-500/10 font-medium'
+                        : 'text-slate-300 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <span className="truncate">{ws.name}</span>
+                    {ws.id === currentWorkspaceId && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
+                  </button>
+                ))}
+                <div className="border-t border-white/[0.08] my-1" />
+                <button
+                  onClick={() => {
+                    setIsWorkspaceDropdownOpen(false);
+                    setIsCreateWorkspaceOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-500/10 transition-colors flex items-center gap-1.5 font-medium"
+                >
+                  <Plus size={12} />
+                  <span>Create Workspace</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="w-px h-3.5 bg-white/[0.08] shrink-0 hidden sm:block" />
 
@@ -527,6 +590,17 @@ function WorkspaceContainer({
               ))}
             </div>
             <span className="font-sans text-xs hidden sm:inline">{membersList.length} Members</span>
+          </button>
+
+          <button
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white text-xs shrink-0"
+            title="Search AST nodes, files, actions (Cmd+K)"
+          >
+            <span className="text-[11px] font-sans">Search</span>
+            <kbd className="hidden sm:inline px-1 py-0.2 text-[9px] font-mono text-slate-400 bg-white/[0.06] border border-white/10 rounded">
+              ⌘K
+            </kbd>
           </button>
 
           <button
@@ -714,6 +788,69 @@ function WorkspaceContainer({
         onUpdateRole={handleUpdateRole}
         onRemoveMember={handleRemoveMember}
       />
+
+      {/* Global Command Palette (Cmd+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        nodes={nodes as unknown as Node<CodeNodeData>[]}
+        onSelectNode={(node) => {
+          setSelectedNodeId(node.id);
+          setIsMobileInspectorOpen(true);
+          if (node.position) {
+            setCenter(node.position.x + 120, node.position.y + 40, { zoom: 1.15, duration: 750 });
+          }
+        }}
+        onNavigateTab={(tab) => setWorkspaceTab(tab)}
+        onOpenAddSource={() => setIsAddSourceOpen(true)}
+        onOpenManageSources={() => setIsManageSourcesOpen(true)}
+        onOpenAIConfig={() => setWorkspaceTab('chat')}
+      />
+
+      {/* Create New Workspace Modal */}
+      <Modal
+        isOpen={isCreateWorkspaceOpen}
+        onClose={() => setIsCreateWorkspaceOpen(false)}
+        title="Create New Workspace"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">Workspace Name</label>
+            <input
+              type="text"
+              value={newWorkspaceName}
+              onChange={(e) => setNewWorkspaceName(e.target.value)}
+              placeholder="e.g. payment-service-core"
+              className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">Description (Optional)</label>
+            <textarea
+              value={newWorkspaceDesc}
+              onChange={(e) => setNewWorkspaceDesc(e.target.value)}
+              placeholder="Brief context about this microservice or mono-repo..."
+              rows={2}
+              className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-sans resize-none"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setIsCreateWorkspaceOpen(false)}
+              className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={!newWorkspaceName.trim() || isCreatingWorkspace}
+              onClick={handleCreateWorkspace}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-colors disabled:opacity-50"
+            >
+              {isCreatingWorkspace ? 'Creating...' : 'Create Workspace'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Floating Toast Notification Container */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
