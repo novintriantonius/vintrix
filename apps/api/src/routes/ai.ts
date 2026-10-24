@@ -262,4 +262,169 @@ export const aiRouter = new Elysia({ prefix: '/ai' })
         message: t.String({ minLength: 1 }),
       }),
     },
+  )
+  // ─── Real-Time Streaming Chat (Server-Sent Events) ───────────────────
+  .post(
+    '/chat/stream',
+    async ({ body, set }) => {
+      const { sessionId, workspaceId, modelId, message } = body;
+
+      // 1. Resolve custom model & endpoint
+      const [model] = await db.select().from(aiModels).where(eq(aiModels.id, modelId));
+      if (!model) {
+        set.status = 404;
+        return new Response(JSON.stringify({ error: 'AI Model configuration not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      const [endpoint] = await db
+        .select()
+        .from(aiEndpoints)
+        .where(eq(aiEndpoints.id, model.endpointId));
+      if (!endpoint) {
+        set.status = 404;
+        return new Response(JSON.stringify({ error: 'AI Endpoint configuration not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      let apiKey = '';
+      if (endpoint.encryptedApiKey) {
+        try {
+          apiKey = await decryptCredential(endpoint.encryptedApiKey, MASTER_KEY);
+        } catch {
+          return new Response(JSON.stringify({ error: 'Failed to decrypt API Key' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      // 2. Persist user message
+      await db.insert(chatMessages).values({
+        sessionId,
+        role: 'user',
+        content: message,
+      });
+
+      // 3. Retrieve Knowledge Graph context
+      const nodes = await db
+        .select()
+        .from(knowledgeNodes)
+        .where(eq(knowledgeNodes.workspaceId, workspaceId))
+        .limit(15);
+
+      const astContext = nodes
+        .map((n) => `[${n.kind.toUpperCase()}] ${n.label} (${n.filePath}): ${n.summary}`)
+        .join('\n');
+
+      const systemPrompt = `You are Vintrix AI Copilot, an elite code intelligence assistant.
+Answer questions accurately based on the indexed Knowledge Graph:
+${astContext.length > 0 ? astContext : 'No specific AST indexed yet.'}
+
+Provide clear architecture diagrams, file references, and actionable code solutions.`;
+
+      // 4. Retrieve recent history
+      const history = await db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.sessionId, sessionId))
+        .orderBy(chatMessages.createdAt)
+        .limit(10);
+
+      const messagesPayload = [
+        { role: 'system', content: systemPrompt },
+        ...history.map((h) => ({ role: h.role, content: h.content })),
+      ];
+
+      const targetUrl = `${endpoint.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+
+      try {
+        const response = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model: model.modelId,
+            messages: messagesPayload,
+            temperature: 0.2,
+            stream: true,
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          const errText = await response.text();
+          return new Response(JSON.stringify({ error: `Upstream AI provider error: ${errText}` }), {
+            status: response.status || 502,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+        let fullAssistantReply = '';
+
+        const transformStream = new TransformStream({
+          async transform(chunk, controller) {
+            const text = decoder.decode(chunk, { stream: true });
+            const lines = text.split('\n');
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const parsed = JSON.parse(trimmed.slice(6));
+                  const delta = parsed.choices?.[0]?.delta?.content || '';
+                  if (delta) {
+                    fullAssistantReply += delta;
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: delta })}\n\n`));
+                  }
+                } catch {
+                  // pass malformed partial lines
+                }
+              }
+            }
+          },
+          async flush(controller) {
+            // Persist assistant message once stream completes
+            if (fullAssistantReply.trim().length > 0) {
+              await db.insert(chatMessages).values({
+                sessionId,
+                role: 'assistant',
+                content: fullAssistantReply,
+              });
+            }
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          },
+        });
+
+        return new Response(response.body.pipeThrough(transformStream), {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+          },
+        });
+      } catch (err: unknown) {
+        const errMessage = err instanceof Error ? err.message : String(err);
+        return new Response(JSON.stringify({ error: `Failed to connect to AI: ${errMessage}` }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    },
+    {
+      body: t.Object({
+        sessionId: t.String(),
+        workspaceId: t.String({ format: 'uuid' }),
+        modelId: t.String(),
+        message: t.String({ minLength: 1 }),
+      }),
+    },
   );

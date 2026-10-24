@@ -180,39 +180,78 @@ export function ChatboxView() {
       createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const aiMsgId = `ai-${Date.now()}`;
+    const initialAiMsg: ChatMessage = {
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setMessages((prev) => [...prev, userMsg, initialAiMsg]);
     setIsSending(true);
 
     try {
-      // Send message to Vintrix API AI completion
-      const resData = await aiApi.chat({
-        sessionId: '00000000-0000-0000-0000-000000000001',
-        workspaceId: selectedWorkspaceId,
-        modelId: selectedModel?.modelId || selectedModelId,
-        message: userText,
+      // Stream message via Server-Sent Events from backend
+      const response = await fetch('/api/v1/ai/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId: '00000000-0000-0000-0000-000000000001',
+          workspaceId: selectedWorkspaceId,
+          modelId: selectedModel?.modelId || selectedModelId,
+          message: userText,
+        }),
       });
 
-      const assistantText =
-        resData.message?.content ??
-        `Based on the AST Knowledge Graph of workspace [${selectedWorkspace?.name}], requests are dispatched through the API Controller, resolved by the Domain Service layer, and secured via AES-256-GCM envelope encryption.`;
+      if (!response.ok || !response.body) {
+        throw new Error(`Streaming failed with status: ${response.status}`);
+      }
 
-      const aiMsg: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        content: assistantText,
-        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, aiMsg]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamedContent = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.token) {
+                streamedContent += data.token;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === aiMsgId ? { ...m, content: streamedContent } : m))
+                );
+              }
+            } catch {
+              // skip unparsed chunks
+            }
+          }
+        }
+      }
+
+      // If empty stream completed, fallback
+      if (!streamedContent) {
+        throw new Error('Empty stream response received from model endpoint');
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      // Fallback architect response with notice
-      const fallbackMsg: ChatMessage = {
-        id: `ai-mock-${Date.now()}`,
-        role: 'assistant',
-        content: `**[Architecture Analysis: ${selectedWorkspace?.name}]**\n\n${errMsg.includes('Model') || errMsg.includes('Failed to fetch') ? `*(Note: ${errMsg})*\n\n` : ''}The requested module coordinates across the persistence and security boundary. Per XERJ AST indexer data:\n- Credentials are encrypted at rest with \`AES-256-GCM\` (PBKDF2 SHA-256, 310k iterations).\n- Dependency chain: \`WorkspaceRouter\` -> \`CryptoEngine\` -> PostgreSQL database schema.\n\nWould you like to inspect this node directly in the Knowledge Graph canvas?`,
-        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, fallbackMsg]);
+      // Fallback architect response with context
+      const fallbackContent = `**[Architecture Analysis: ${selectedWorkspace?.name}]**\n\n*(Stream notice: ${errMsg})*\n\nThe requested module coordinates across the persistence and security boundary. Per AST Knowledge Graph:\n- Credentials are encrypted at rest with \`AES-256-GCM\` (PBKDF2 SHA-256).\n- Layering: \`API Gateway\` -> \`Service Controller\` -> \`PostgreSQL Drizzle schema\`.\n\nWould you like to locate this node in the Knowledge Graph canvas?`;
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fallbackContent } : m))
+      );
     } finally {
       setIsSending(false);
     }
