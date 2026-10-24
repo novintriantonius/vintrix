@@ -1,4 +1,6 @@
 import { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export interface SSHConnectOptions {
   host: string;
@@ -84,6 +86,72 @@ export async function listRemoteDirectory(
     });
 
     return entries;
+  } finally {
+    conn.end();
+  }
+}
+
+/**
+ * Downloads a remote directory tree to a local destination directory via SFTP.
+ * Selectively ignores common non-code folders like node_modules, .git, dist.
+ */
+export async function syncRemoteSSHDirectory(
+  opts: SSHConnectOptions,
+  remoteDir: string,
+  localTargetDir: string,
+  maxFiles = 500,
+): Promise<{ filesDownloaded: number; targetDir: string }> {
+  const conn = await openConnection(opts);
+  let filesDownloaded = 0;
+
+  try {
+    const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
+      conn.sftp((err, sftpWrapper) => {
+        if (err) return reject(err);
+        resolve(sftpWrapper);
+      });
+    });
+
+    const ignoredDirs = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'target', 'vendor']);
+
+    async function walkAndDownload(rem: string, loc: string): Promise<void> {
+      if (filesDownloaded >= maxFiles) return;
+      fs.mkdirSync(loc, { recursive: true });
+
+      const items: any[] = await new Promise((resolve, reject) => {
+        sftp.readdir(rem, (err, list) => {
+          if (err) return reject(err);
+          resolve(list);
+        });
+      });
+
+      for (const item of items) {
+        if (filesDownloaded >= maxFiles) break;
+        const itemName = item.filename;
+        if (itemName === '.' || itemName === '..' || ignoredDirs.has(itemName)) {
+          continue;
+        }
+
+        const remoteItemPath = path.posix.join(rem, itemName);
+        const localItemPath = path.join(loc, itemName);
+
+        if (item.attrs.isDirectory()) {
+          await walkAndDownload(remoteItemPath, localItemPath);
+        } else if (item.attrs.isFile()) {
+          // Download source file
+          await new Promise<void>((res, rej) => {
+            sftp.fastGet(remoteItemPath, localItemPath, (err) => {
+              if (err) return rej(err);
+              res();
+            });
+          });
+          filesDownloaded++;
+        }
+      }
+    }
+
+    await walkAndDownload(remoteDir, localTargetDir);
+    return { filesDownloaded, targetDir: localTargetDir };
   } finally {
     conn.end();
   }

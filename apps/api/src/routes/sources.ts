@@ -2,11 +2,13 @@ import { Elysia, t } from 'elysia';
 import { db } from '../db/client';
 import { codeSources, sshSourceDetails, gitSourceDetails, knowledgeNodes, knowledgeEdges } from '../db/schema';
 import { encryptCredential, decryptCredential } from '../services/crypto';
-import { testSSHConnection, listRemoteDirectory } from '../services/ssh';
+import { testSSHConnection, listRemoteDirectory, syncRemoteSSHDirectory } from '../services/ssh';
+import { syncGitRepository } from '../services/git';
 import { scanCodebaseDirectory } from '../services/astScanner';
 import { eq } from 'drizzle-orm';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 
 const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY ?? 'vintrix-dev-master-key-must-be-32-chars!!';
 
@@ -60,21 +62,84 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
       return { message: 'Source not found' };
     }
 
-    // Determine target local directory to scan if applicable, or project directory
-    // If the source name or path matches a local repo/workspace or vintrix itself
+    // Base cache directory for external synced sources
+    const cacheRoot = path.join(os.homedir(), '.vintrix', 'repos', existing.id);
     const rootRepoDir = path.resolve(process.cwd(), '../..');
     let targetScanDir = rootRepoDir;
 
-    // Check if Git source has specific path or cloned dir
-    const [gitDetails] = await db
-      .select()
-      .from(gitSourceDetails)
-      .where(eq(gitSourceDetails.codeSourceId, existing.id));
+    if (existing.type === 'git') {
+      const [gitDetails] = await db
+        .select()
+        .from(gitSourceDetails)
+        .where(eq(gitSourceDetails.codeSourceId, existing.id));
 
-    if (gitDetails && gitDetails.indexPaths && gitDetails.indexPaths.length > 0) {
-      const customPath = path.resolve(rootRepoDir, gitDetails.indexPaths[0]);
-      if (fs.existsSync(customPath)) {
-        targetScanDir = customPath;
+      if (gitDetails && gitDetails.repoUrl) {
+        // If repoUrl points to a local directory or matches current vintrix
+        if (gitDetails.repoUrl.startsWith('/') || gitDetails.repoUrl.startsWith('.')) {
+          const localPath = path.resolve(rootRepoDir, gitDetails.repoUrl);
+          if (fs.existsSync(localPath)) {
+            targetScanDir = localPath;
+          }
+        } else {
+          // Real remote git repo sync
+          const token = gitDetails.encryptedToken
+            ? await decryptCredential(gitDetails.encryptedToken, MASTER_KEY)
+            : null;
+          try {
+            await syncGitRepository({
+              repoUrl: gitDetails.repoUrl,
+              branch: gitDetails.branch || 'main',
+              targetDir: cacheRoot,
+              token,
+            });
+            targetScanDir = cacheRoot;
+          } catch (syncErr: any) {
+            console.warn(`Git sync warning (${gitDetails.repoUrl}):`, syncErr.message);
+            // Fall back to scanning custom path or project dir if local
+            if (gitDetails.indexPaths && gitDetails.indexPaths.length > 0) {
+              const customPath = path.resolve(rootRepoDir, gitDetails.indexPaths[0]);
+              if (fs.existsSync(customPath)) targetScanDir = customPath;
+            }
+          }
+        }
+      }
+    } else if (existing.type === 'ssh') {
+      const [sshDetails] = await db
+        .select()
+        .from(sshSourceDetails)
+        .where(eq(sshSourceDetails.codeSourceId, existing.id));
+
+      if (sshDetails && sshDetails.indexPaths && sshDetails.indexPaths.length > 0) {
+        const password = sshDetails.encryptedPassword
+          ? await decryptCredential(sshDetails.encryptedPassword, MASTER_KEY)
+          : undefined;
+        const privateKey = sshDetails.encryptedPrivKey
+          ? await decryptCredential(sshDetails.encryptedPrivKey, MASTER_KEY)
+          : undefined;
+        const passphrase = sshDetails.encryptedPassphrase
+          ? await decryptCredential(sshDetails.encryptedPassphrase, MASTER_KEY)
+          : undefined;
+
+        try {
+          await syncRemoteSSHDirectory(
+            {
+              host: sshDetails.host,
+              port: sshDetails.port,
+              username: sshDetails.username,
+              password,
+              privateKey,
+              passphrase,
+            },
+            sshDetails.indexPaths[0],
+            cacheRoot,
+          );
+          targetScanDir = cacheRoot;
+        } catch (sshErr: any) {
+          console.warn(`SSH sync warning (${sshDetails.host}):`, sshErr.message);
+          // If remote not reachable in dev, fallback to local path if exists
+          const customPath = path.resolve(rootRepoDir, sshDetails.indexPaths[0]);
+          if (fs.existsSync(customPath)) targetScanDir = customPath;
+        }
       }
     }
 

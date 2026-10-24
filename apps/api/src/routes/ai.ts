@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia';
 import { db } from '../db/client';
 import { aiEndpoints, aiModels, chatSessions, chatMessages, knowledgeNodes } from '../db/schema';
 import { encryptCredential, decryptCredential } from '../services/crypto';
+import { retrieveRelevantContext } from '../services/retrieval';
 import { eq, desc } from 'drizzle-orm';
 
 const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY ?? 'vintrix-dev-master-key-must-be-32-chars!!';
@@ -167,26 +168,47 @@ export const aiRouter = new Elysia({ prefix: '/ai' })
         }
       }
 
-      // 2. Fetch workspace codebase context (knowledge nodes summary)
-      const nodes = await db
-        .select({
-          label: knowledgeNodes.label,
-          kind: knowledgeNodes.kind,
-          filePath: knowledgeNodes.filePath,
-          summary: knowledgeNodes.summary,
-        })
-        .from(knowledgeNodes)
-        .where(eq(knowledgeNodes.workspaceId, workspaceId))
-        .limit(30);
+      // 2. Fetch workspace codebase context via BM25 & symbol hybrid retrieval
+      const retrieved = await retrieveRelevantContext(workspaceId, message, 8);
 
-      const codebaseContext = nodes.length > 0
-        ? `\n\n[Codebase Architecture Context]:\n` +
-          nodes
-            .map((n) => `- [${n.kind.toUpperCase()}] ${n.label} (${n.filePath}): ${n.summary ?? 'No summary'}`)
-            .join('\n')
-        : '';
+      let codebaseContext = '';
+      if (retrieved.length > 0) {
+        codebaseContext =
+          `\n\n[Relevant Codebase AST Context - BM25 Ranked]:\n` +
+          retrieved
+            .map((n) => {
+              const lineRef = n.lines ? ` (${n.lines})` : '';
+              const snippet = n.codeSnippet
+                ? `\n  Snippet:\n  \`\`\`\n  ${n.codeSnippet.split('\n').slice(0, 8).join('\n  ')}\n  \`\`\``
+                : '';
+              return `- [${n.kind.toUpperCase()}] ${n.label} in \`${n.filePath}\`${lineRef}: ${n.summary}${snippet}`;
+            })
+            .join('\n\n');
+      } else {
+        // Fallback to top general nodes if no specific search matched
+        const fallbackNodes = await db
+          .select({
+            label: knowledgeNodes.label,
+            kind: knowledgeNodes.kind,
+            filePath: knowledgeNodes.filePath,
+            summary: knowledgeNodes.summary,
+          })
+          .from(knowledgeNodes)
+          .where(eq(knowledgeNodes.workspaceId, workspaceId))
+          .limit(10);
 
-      const systemPrompt = `You are Vintrix AI, an expert software architect assisting engineers with multi-repo codebase comprehension and system architecture.${codebaseContext}`;
+        if (fallbackNodes.length > 0) {
+          codebaseContext =
+            `\n\n[General Codebase Architecture Context]:\n` +
+            fallbackNodes
+              .map((n) => `- [${n.kind.toUpperCase()}] ${n.label} (${n.filePath}): ${n.summary ?? 'No summary'}`)
+              .join('\n');
+        }
+      }
+
+      const systemPrompt = `You are Vintrix AI, an expert software architect assisting engineers with multi-repo codebase comprehension and system architecture.
+Always provide precise file:line references for your architectural explanations and answers.
+${codebaseContext}`;
 
       // 3. Save user message to session
       await db.insert(chatMessages).values({
@@ -310,22 +332,34 @@ export const aiRouter = new Elysia({ prefix: '/ai' })
         content: message,
       });
 
-      // 3. Retrieve Knowledge Graph context
-      const nodes = await db
-        .select()
-        .from(knowledgeNodes)
-        .where(eq(knowledgeNodes.workspaceId, workspaceId))
-        .limit(15);
+      // 3. Retrieve Knowledge Graph context via BM25 hybrid ranking
+      const retrieved = await retrieveRelevantContext(workspaceId, message, 8);
 
-      const astContext = nodes
-        .map((n) => `[${n.kind.toUpperCase()}] ${n.label} (${n.filePath}): ${n.summary}`)
-        .join('\n');
+      let astContext = '';
+      if (retrieved.length > 0) {
+        astContext = retrieved
+          .map((n) => {
+            const lineRef = n.lines ? ` (${n.lines})` : '';
+            return `[${n.kind.toUpperCase()}] ${n.label} in ${n.filePath}${lineRef}: ${n.summary}`;
+          })
+          .join('\n');
+      } else {
+        const fallbackNodes = await db
+          .select()
+          .from(knowledgeNodes)
+          .where(eq(knowledgeNodes.workspaceId, workspaceId))
+          .limit(10);
+
+        astContext = fallbackNodes
+          .map((n) => `[${n.kind.toUpperCase()}] ${n.label} (${n.filePath}): ${n.summary}`)
+          .join('\n');
+      }
 
       const systemPrompt = `You are Vintrix AI Copilot, an elite code intelligence assistant.
 Answer questions accurately based on the indexed Knowledge Graph:
 ${astContext.length > 0 ? astContext : 'No specific AST indexed yet.'}
 
-Provide clear architecture diagrams, file references, and actionable code solutions.`;
+Provide clear architecture diagrams, file:line references, and actionable code solutions.`;
 
       // 4. Retrieve recent history
       const history = await db

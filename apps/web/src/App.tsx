@@ -13,7 +13,7 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Layers, Box, GitFork, MessageSquareCode, Share2, Info, LogIn, LogOut, ChevronDown, Plus } from 'lucide-react';
+import { Layers, Box, GitFork, MessageSquareCode, Share2, Info, LogIn, LogOut, ChevronDown, Plus, MoreHorizontal, Users, Search } from 'lucide-react';
 import { Nav, Hero } from './components/landing/HeroSection';
 import {
   FeaturesSection,
@@ -108,6 +108,7 @@ function WorkspaceContainer({
   const [selectedNodeId, setSelectedNodeId] = useState<string>(INITIAL_WORKSPACE_NODES[0].id);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
@@ -675,7 +676,7 @@ graph TD
           <div className="relative">
             <button
               onClick={() => setIsWorkspaceDropdownOpen((prev) => !prev)}
-              className="flex items-center gap-1.5 text-[11px] font-mono text-slate-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] px-2 py-1 rounded border border-white/[0.08] transition-colors truncate max-w-[150px]"
+              className="flex items-center gap-1 sm:gap-1.5 text-[11px] font-mono text-slate-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] px-1.5 sm:px-2 py-1 rounded border border-white/[0.08] transition-colors truncate max-w-[95px] sm:max-w-[150px]"
               title="Switch Workspace"
             >
               <span className="truncate">
@@ -756,10 +757,31 @@ graph TD
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2.5 text-xs font-mono text-slate-400 shrink-0">
-          {/* Team Collaboration Trigger */}
+          {/* Desktop Search Trigger */}
+          <button
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white text-xs shrink-0"
+            title="Search AST nodes, files, actions (Cmd+K)"
+          >
+            <span className="text-[11px] font-sans">Search</span>
+            <kbd className="px-1 py-0.2 text-[9px] font-mono text-slate-400 bg-white/[0.06] border border-white/10 rounded">
+              ⌘K
+            </kbd>
+          </button>
+
+          {/* Mobile Quick Search Button */}
+          <button
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className="sm:hidden flex items-center justify-center w-7 h-7 rounded-md bg-white/[0.04] text-slate-300 border border-white/[0.08] hover:text-white"
+            title="Search (Cmd+K)"
+          >
+            <Search size={13} />
+          </button>
+
+          {/* Team Collaboration Trigger - Desktop */}
           <button
             onClick={() => setIsTeamModalOpen(true)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white shrink-0"
+            className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white shrink-0"
             title="Invite team members and manage permissions"
           >
             <div className="flex -space-x-1.5 overflow-hidden">
@@ -772,48 +794,42 @@ graph TD
                 </div>
               ))}
             </div>
-            <span className="font-sans text-xs hidden sm:inline">{membersList.length} Members</span>
+            <span className="font-sans text-xs">{membersList.length} Members</span>
           </button>
 
-          <button
-            onClick={() => setIsCommandPaletteOpen(true)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-white text-xs shrink-0"
-            title="Search AST nodes, files, actions (Cmd+K)"
-          >
-            <span className="text-[11px] font-sans">Search</span>
-            <kbd className="hidden sm:inline px-1 py-0.2 text-[9px] font-mono text-slate-400 bg-white/[0.06] border border-white/10 rounded">
-              ⌘K
-            </kbd>
-          </button>
-
+          {/* Add Source - Desktop */}
           <button
             onClick={() => setIsAddSourceOpen(true)}
-            className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition-all font-sans font-medium text-xs shrink-0"
+            className="hidden md:flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition-all font-sans font-medium text-xs shrink-0"
             title="Connect Git repository or SSH/SFTP server"
           >
             <GitFork size={13} />
-            <span className="hidden sm:inline">+ Add Source</span>
+            <span>+ Add Source</span>
           </button>
+
+          {/* Manage Sources - Desktop */}
           <button
             onClick={() => setIsManageSourcesOpen(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-sky-300 shrink-0"
+            className="hidden md:flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-sky-300 shrink-0"
             title="Click to manage, re-index, or delete connected sources"
           >
-            <span className="hidden sm:inline">
+            <span>
               Sources: {gitSourcesCount} Git, {sshSourcesCount} SSH
             </span>
-            <span className="sm:hidden text-[11px]">{sourcesList.length} src</span>
           </button>
-          <span className="hidden md:flex items-center gap-1.5 text-slate-400">
+
+          {/* Nodes count - Large Screens */}
+          <span className="hidden lg:flex items-center gap-1.5 text-slate-400">
             <Layers size={13} /> Nodes: {nodes.length}
           </span>
 
+          {/* User Auth - Desktop */}
           {user ? (
-            <div className="flex items-center gap-1.5 pl-1.5 border-l border-white/[0.08]">
+            <div className="hidden sm:flex items-center gap-1.5 pl-1.5 border-l border-white/[0.08]">
               <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-sky-400 to-indigo-500 text-[10px] font-bold text-slate-950 flex items-center justify-center shrink-0">
                 {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
               </div>
-              <span className="hidden lg:inline text-[11px] text-slate-300 font-sans truncate max-w-[90px]">
+              <span className="hidden xl:inline text-[11px] text-slate-300 font-sans truncate max-w-[90px]">
                 {user.displayName || user.email}
               </span>
               <button
@@ -827,7 +843,7 @@ graph TD
           ) : (
             <button
               onClick={onOpenAuth}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 border border-white/[0.1] transition-all font-sans font-medium text-xs shrink-0"
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 border border-white/[0.1] transition-all font-sans font-medium text-xs shrink-0"
             >
               <LogIn size={13} className="text-sky-400" />
               <span>Sign in</span>
@@ -838,12 +854,90 @@ graph TD
           {workspaceTab === 'graph' && (
             <button
               onClick={() => setIsMobileInspectorOpen((prev) => !prev)}
-              className="flex md:hidden items-center gap-1 p-1.5 text-slate-300 hover:text-white bg-white/[0.05] border border-white/[0.08] rounded-md transition-colors shrink-0"
+              className="flex md:hidden items-center justify-center w-7 h-7 text-slate-300 hover:text-white bg-white/[0.05] border border-white/[0.08] rounded-md transition-colors shrink-0"
               title="Toggle AST Node Inspector"
             >
               <Info size={14} className="text-sky-400" />
             </button>
           )}
+
+          {/* Mobile Overflow Menu Button (Three dots ...) */}
+          <div className="relative md:hidden">
+            <button
+              onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+              className="flex items-center justify-center w-7 h-7 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-colors"
+              title="More workspace actions"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+
+            {isMobileMenuOpen && (
+              <div
+                className="absolute top-full right-0 mt-1.5 w-52 bg-[#090e18] border border-white/10 rounded-xl shadow-2xl py-1.5 z-50 text-xs"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Workspace Actions
+                </div>
+                <button
+                  onClick={() => setIsAddSourceOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-white/[0.06] flex items-center gap-2"
+                >
+                  <GitFork size={13} className="text-sky-400" />
+                  <span>Add Code Source</span>
+                </button>
+                <button
+                  onClick={() => setIsManageSourcesOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-white/[0.06] flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <Layers size={13} className="text-emerald-400" />
+                    <span>Manage Sources</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">
+                    {sourcesList.length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setIsTeamModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-white/[0.06] flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <Users size={13} className="text-indigo-400" />
+                    <span>Team Members</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">
+                    {membersList.length}
+                  </span>
+                </button>
+
+                <div className="border-t border-white/[0.08] my-1" />
+
+                {user ? (
+                  <div className="px-3 py-1.5">
+                    <div className="text-[11px] text-slate-300 font-sans truncate mb-1">
+                      {user.displayName || user.email}
+                    </div>
+                    <button
+                      onClick={onLogout}
+                      className="w-full text-left py-1 text-rose-400 hover:text-rose-300 flex items-center gap-2"
+                    >
+                      <LogOut size={13} />
+                      <span>Sign out</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={onOpenAuth}
+                    className="w-full text-left px-3 py-2 text-sky-400 hover:bg-sky-500/10 flex items-center gap-2 font-medium"
+                  >
+                    <LogIn size={13} />
+                    <span>Sign in</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
