@@ -139,18 +139,27 @@ export function CommandPalette({
   ];
 
   // Convert nodes to AST items
-  const astItems: CommandItem[] = nodes.map((n) => ({
-    id: `node-${n.id}`,
-    category: 'ast',
-    title: n.data.label,
-    subtitle: `${n.data.filePath} • ${n.data.sourceName || 'Workspace'}`,
-    icon: <FileCode className="w-4 h-4 text-cyan-400" />,
-    badge: n.data.kind,
-    action: () => {
-      onSelectNode(n);
-      onClose();
-    },
-  }));
+  const astItems: CommandItem[] = nodes.map((n) => {
+    const isHot = n.data.hotspotScore !== undefined && n.data.hotspotScore >= 4;
+    return {
+      id: `node-${n.id}`,
+      category: 'ast',
+      title: n.data.label,
+      subtitle: `${n.data.filePath} • ${n.data.sourceName || 'Workspace'}${
+        n.data.hotspotScore ? ` • Coupling: ${n.data.hotspotScore}` : ''
+      }`,
+      icon: isHot ? (
+        <FileCode className="w-4 h-4 text-amber-400" />
+      ) : (
+        <FileCode className="w-4 h-4 text-cyan-400" />
+      ),
+      badge: isHot ? `${n.data.kind} (HOT)` : n.data.kind,
+      action: () => {
+        onSelectNode(n);
+        onClose();
+      },
+    };
+  });
 
   const allItems = [...astItems, ...navigationItems];
 

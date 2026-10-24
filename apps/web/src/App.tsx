@@ -1220,10 +1220,11 @@ graph TD
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
-        nodes={nodes as unknown as Node<CodeNodeData>[]}
+        nodes={enrichedNodes as unknown as Node<CodeNodeData>[]}
         onSelectNode={(node) => {
           setSelectedNodeId(node.id);
           setIsMobileInspectorOpen(true);
+          setIsCodeViewerOpen(true);
           if (node.position) {
             setCenter(node.position.x + 120, node.position.y + 40, { zoom: 1.15, duration: 750 });
           }
