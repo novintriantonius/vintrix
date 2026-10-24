@@ -6,6 +6,8 @@ import {
   Code,
   Database,
   ShieldCheck,
+  DownloadSimple,
+  FileText,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
 
@@ -20,6 +22,8 @@ interface GraphToolbarProps {
   nodeCount: number;
   totalNodes: number;
   onResetView: () => void;
+  onExportPng?: () => void;
+  onExportReport?: () => void;
 }
 
 const FILTER_BUTTONS: { kind: NodeKind | 'all'; label: string; icon: typeof Stack; color: string }[] = [
@@ -41,6 +45,8 @@ export function GraphToolbar({
   nodeCount,
   totalNodes,
   onResetView,
+  onExportPng,
+  onExportReport,
 }: GraphToolbarProps) {
   return (
     <div className="absolute top-3 left-3 right-3 sm:right-auto sm:top-4 sm:left-4 z-10 flex items-center gap-1.5 sm:gap-2 bg-[#080d16]/95 backdrop-blur-md border border-white/[0.08] p-1 rounded-xl shadow-xl max-w-[calc(100vw-24px)] overflow-x-auto no-scrollbar">
@@ -126,6 +132,34 @@ export function GraphToolbar({
           <span>Fit</span>
         </button>
       </div>
+
+      {(onExportPng || onExportReport) && (
+        <>
+          <div className="h-3.5 w-px bg-white/[0.08] shrink-0" />
+          <div className="flex items-center gap-1 shrink-0">
+            {onExportPng && (
+              <button
+                onClick={onExportPng}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors"
+                title="Export Knowledge Graph view"
+              >
+                <DownloadSimple size={12} className="text-sky-400" />
+                <span className="hidden sm:inline">Export</span>
+              </button>
+            )}
+            {onExportReport && (
+              <button
+                onClick={onExportReport}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors"
+                title="Generate Architecture Markdown Report"
+              >
+                <FileText size={12} className="text-emerald-400" />
+                <span className="hidden sm:inline">Report</span>
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

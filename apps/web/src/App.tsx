@@ -474,6 +474,189 @@ function WorkspaceContainer({
     }
   }, [searchQuery, filteredNodes, focusNodeOnCanvas]);
 
+  // Export Knowledge Graph as SVG file
+  const handleExportSvg = () => {
+    try {
+      const activeWs = workspacesList.find((w) => w.id === currentWorkspaceId)?.name || 'workspace';
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `${activeWs}-graph-${timestamp}.svg`;
+
+      const escapeXml = (unsafe: string) => {
+        return unsafe.replace(/[<>&'"]/g, (c) => {
+          switch (c) {
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '&': return '&amp;';
+            case '\'': return '&apos;';
+            case '"': return '&quot;';
+            default: return c;
+          }
+        });
+      };
+
+      const width = 1600;
+      const height = 900;
+      const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="background-color: #050a10; font-family: ui-sans-serif, system-ui, sans-serif;">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1320" />
+      <stop offset="100%" stop-color="#050a10" />
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#bgGrad)" />
+  <text x="32" y="48" fill="#38bdf8" font-size="22" font-weight="bold">Vintrix Knowledge Graph</text>
+  <text x="32" y="74" fill="#94a3b8" font-size="13">Workspace: ${escapeXml(activeWs)} | Total Nodes: ${nodes.length} | Exported: ${new Date().toLocaleString()}</text>
+  
+  <g transform="translate(60, 110)">
+    ${filteredNodes
+      .map((n, i) => {
+        const d = n.data as unknown as CodeNodeData;
+        const x = (i % 4) * 360;
+        const y = Math.floor(i / 4) * 160;
+        const kindColors: Record<string, string> = {
+          controller: '#38bdf8',
+          service: '#34d399',
+          database: '#fbbf24',
+          security: '#f43f5e',
+          gateway: '#818cf8',
+        };
+        const color = kindColors[d.kind] || '#94a3b8';
+        const tags = Array.isArray(d.tags) ? d.tags.slice(0, 3).join(', ') : 'AST symbol';
+        return `
+    <g transform="translate(${x}, ${y})">
+      <rect width="320" height="120" rx="10" fill="#0c1626" stroke="${color}" stroke-width="1.5" opacity="0.95" />
+      <circle cx="20" cy="24" r="5" fill="${color}" />
+      <text x="32" y="28" fill="#ffffff" font-size="13" font-weight="bold">${escapeXml(d.label || '')}</text>
+      <text x="20" y="52" fill="#94a3b8" font-size="11" font-family="monospace">${escapeXml(d.filePath || '')}</text>
+      <text x="20" y="76" fill="#64748b" font-size="10">Tags: ${escapeXml(tags)}</text>
+      <text x="20" y="98" fill="#38bdf8" font-size="10" font-weight="bold">Type: ${d.kind.toUpperCase()}</text>
+    </g>`;
+      })
+      .join('\n')}
+  </g>
+</svg>`;
+
+      const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      addToast({
+        type: 'success',
+        title: 'Graph Exported',
+        description: `Knowledge graph exported to ${filename}`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Export Failed',
+        description: err.message || 'Unknown error occurred while exporting graph.',
+      });
+    }
+  };
+
+  // Export Architectural Markdown Report
+  const handleExportReport = () => {
+    try {
+      const activeWs = workspacesList.find((w) => w.id === currentWorkspaceId)?.name || 'workspace';
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `${activeWs}-architecture-report-${timestamp}.md`;
+
+      const kindBreakdown = filteredNodes.reduce((acc, curr) => {
+        const k = (curr.data as unknown as CodeNodeData).kind;
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      let md = `# Architecture & Codebase Intelligence Report
+**Workspace:** ${activeWs}  
+**Generated At:** ${new Date().toLocaleString()}  
+**Indexed Nodes:** ${nodes.length}  
+**Active Filter Nodes:** ${filteredNodes.length}  
+**Relationships (Edges):** ${edges.length}  
+
+---
+
+## 1. Executive Summary
+This report was generated automatically by **Vintrix Architecture Intelligence Engine**. It analyzes AST nodes, dependency flow, module responsibilities, and external system integrations mapped across this workspace.
+
+### Node Distribution
+| Category | Node Count | Description |
+| :--- | :---: | :--- |
+| **API / Controllers** | ${kindBreakdown['controller'] || 0} | Public REST/RPC entrypoints & handlers |
+| **Domain Services** | ${kindBreakdown['service'] || 0} | Core business logic & processing pipelines |
+| **Database & Schema** | ${kindBreakdown['database'] || 0} | Persistent models, ORM mappings & storage |
+| **Security & Auth** | ${kindBreakdown['security'] || 0} | Middleware, guards, tokens & encryption |
+
+---
+
+## 2. Codebase Symbol Directory
+Below is the categorized breakdown of all indexed source files in this workspace:
+
+`;
+
+      filteredNodes.forEach((n) => {
+        const d = n.data as unknown as CodeNodeData;
+        md += `### [${d.kind.toUpperCase()}] ${d.label}\n`;
+        md += `- **File Path:** \`${d.filePath}\`\n`;
+        if (d.lines) md += `- **Lines:** ${d.lines}\n`;
+        if (d.summary) md += `- **Summary:** ${d.summary}\n`;
+        if (Array.isArray(d.tags) && d.tags.length > 0) {
+          md += `- **Tags:** ${d.tags.map((s) => `\`${s}\``).join(', ')}\n`;
+        }
+        md += '\n';
+      });
+
+      md += `---
+## 3. Dependency Flow Graph
+\`\`\`mermaid
+graph TD
+`;
+      // Generate Mermaid diagram from nodes and edges
+      filteredNodes.forEach((n) => {
+        const d = n.data as unknown as CodeNodeData;
+        const cleanId = n.id.replace(/[^a-zA-Z0-9_]/g, '_');
+        md += `  ${cleanId}["${d.label} (${d.kind})"]\n`;
+      });
+
+      edges.forEach((e) => {
+        const from = e.source.replace(/[^a-zA-Z0-9_]/g, '_');
+        const to = e.target.replace(/[^a-zA-Z0-9_]/g, '_');
+        const label = e.label ? `|"${e.label}"|` : '';
+        md += `  ${from} -->${label} ${to}\n`;
+      });
+      md += '```\n\n_Generated by Vintrix Engine._\n';
+
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      addToast({
+        type: 'success',
+        title: 'Report Generated',
+        description: `Architecture markdown report saved to ${filename}`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Report Generation Failed',
+        description: err.message || 'Unknown error occurred while generating report.',
+      });
+    }
+  };
+
   return (
     <div className="flex h-screen w-screen bg-[#050a10] text-[#e0e0e0] font-sans overflow-hidden">
       {/* Top Header */}
@@ -680,6 +863,8 @@ function WorkspaceContainer({
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}
+                onExportPng={handleExportSvg}
+                onExportReport={handleExportReport}
               />
 
               <ReactFlow
