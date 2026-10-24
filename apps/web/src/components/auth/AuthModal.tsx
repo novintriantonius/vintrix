@@ -11,17 +11,27 @@ interface AuthModalProps {
 
 export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null);
+  const [customEmail, setCustomEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleOAuthLogin = async (provider: 'google' | 'github') => {
     setLoadingProvider(provider);
     setErrorMsg(null);
     try {
-      // Simulate real OAuth popup/callback exchange with passwordless auth backend
+      const email = customEmail.trim()
+        ? customEmail.trim()
+        : provider === 'google'
+          ? 'developer@gmail.com'
+          : 'engineer@github.com';
+
       const res = await authApi.signInWithOAuth({
         provider,
-        email: provider === 'google' ? 'developer@gmail.com' : 'engineer@github.com',
-        name: provider === 'google' ? 'Google Developer' : 'GitHub Engineer',
+        email,
+        name: customEmail.trim()
+          ? customEmail.split('@')[0]
+          : provider === 'google'
+            ? 'Google Developer'
+            : 'GitHub Engineer',
       });
       localStorage.setItem('vintrix_token', res.token);
       localStorage.setItem('vintrix_user', JSON.stringify(res.user));
@@ -59,6 +69,19 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             {errorMsg}
           </div>
         )}
+
+        <div>
+          <label className="block text-[11px] font-medium text-slate-400 mb-1">
+            Sign-in Account Email (Optional)
+          </label>
+          <input
+            type="email"
+            value={customEmail}
+            onChange={(e) => setCustomEmail(e.target.value)}
+            placeholder="you@company.com or leave blank"
+            className="w-full bg-[#0a101d] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono transition-colors"
+          />
+        </div>
 
         {/* OAuth Buttons */}
         <div className="space-y-2.5">

@@ -1,5 +1,8 @@
 import { Elysia, t } from 'elysia';
 import { jwt } from '@elysiajs/jwt';
+import { db } from '../db/client';
+import { users, workspaces, workspaceMembers, roles } from '../db/schema';
+import { eq } from 'drizzle-orm';
 
 // Passwordless Google & GitHub OAuth Handlers
 export const authRouter = new Elysia({ prefix: '/auth' })
@@ -42,15 +45,62 @@ export const authRouter = new Elysia({ prefix: '/auth' })
   .post(
     '/callback',
     async ({ body, jwt, set }) => {
-      const { provider, code, email, name, avatarUrl } = body;
+      const { provider, code: _code, email, name, avatarUrl } = body;
 
-      // In production exchange code with OAuth provider tokens
-      // For passwordless flow:
       const targetEmail = email || `${provider}.user@vintrix.ai`;
       const displayName = name || (provider === 'google' ? 'Google Developer' : 'GitHub Engineer');
+      const finalAvatar = avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${targetEmail}`;
+
+      let userId = `usr-${provider}-${Date.now()}`;
+
+      try {
+        // Query or persist user in database
+        const existingUsers = await db.select().from(users).where(eq(users.email, targetEmail)).limit(1);
+
+        if (existingUsers.length > 0) {
+          userId = existingUsers[0].id;
+        } else {
+          const inserted = await db
+            .insert(users)
+            .values({
+              email: targetEmail,
+              displayName,
+              avatarUrl: finalAvatar,
+              provider,
+              providerId: `oauth-${provider}-${Date.now()}`,
+            })
+            .returning();
+          if (inserted.length > 0) {
+            userId = inserted[0].id;
+
+            // Create initial default workspace for the new user
+            const insertedWorkspace = await db
+              .insert(workspaces)
+              .values({
+                name: `${displayName.split(' ')[0]}'s Workspace`,
+                description: 'Personal codebase intelligence workspace',
+                ownerId: userId,
+              })
+              .returning();
+
+            if (insertedWorkspace.length > 0) {
+              const defaultRoles = await db.select().from(roles).where(eq(roles.name, 'owner')).limit(1);
+              if (defaultRoles.length > 0) {
+                await db.insert(workspaceMembers).values({
+                  workspaceId: insertedWorkspace[0].id,
+                  userId,
+                  roleId: defaultRoles[0].id,
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[OAuth] DB user sync failed (running offline fallback):', err);
+      }
 
       const token = await jwt.sign({
-        sub: `usr-${provider}-${Date.now()}`,
+        sub: userId,
         email: targetEmail,
         name: displayName,
         provider,
@@ -60,10 +110,10 @@ export const authRouter = new Elysia({ prefix: '/auth' })
       return {
         token,
         user: {
-          id: `usr-${provider}-${Date.now()}`,
+          id: userId,
           email: targetEmail,
           displayName,
-          avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${targetEmail}`,
+          avatarUrl: finalAvatar,
           provider,
         },
       };
