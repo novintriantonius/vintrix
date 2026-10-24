@@ -5,6 +5,7 @@ import { workspacesRouter } from './routes/workspaces';
 import { sourcesRouter } from './routes/sources';
 import { aiRouter } from './routes/ai';
 import { authRouter } from './routes/auth';
+import { graphRouter } from './routes/graph';
 
 const app = new Elysia()
   .use(cors())
@@ -34,17 +35,7 @@ const app = new Elysia()
       .use(workspacesRouter)
       .use(sourcesRouter)
       .use(aiRouter)
-      .get('/graph', () => ({
-        nodes: [
-          { id: '1', label: 'AuthService', type: 'class', layer: 'service', path: 'src/auth/service.ts' },
-          { id: '2', label: 'AuthController', type: 'class', layer: 'api', path: 'src/auth/controller.ts' },
-          { id: '3', label: 'UserRepository', type: 'class', layer: 'data', path: 'src/user/repository.ts' },
-        ],
-        edges: [
-          { id: 'e1-2', source: '2', target: '1', type: 'calls' },
-          { id: 'e1-3', source: '1', target: '3', type: 'calls' },
-        ],
-      })),
+      .use(graphRouter),
   )
   .listen(Number(process.env.PORT) || 3001);
 

@@ -13,7 +13,7 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Layers, Box, GitFork, MessageSquareCode, Share2, Info } from 'lucide-react';
+import { Layers, Box, GitFork, MessageSquareCode, Share2, Info, LogIn, LogOut, ChevronDown, Plus } from 'lucide-react';
 import { Nav, Hero } from './components/landing/HeroSection';
 import {
   FeaturesSection,
@@ -38,8 +38,9 @@ import {
   type WorkspaceMember,
 } from './components/workspace/WorkspaceTeamModal';
 import { AuthModal } from './components/auth/AuthModal';
+import { Modal } from './components/common/Modal';
 import { ToastContainer, type ToastMessage } from './components/common';
-import { sourcesApi, workspacesApi, type WorkspaceMemberAPI, type AuthUser } from './services/api';
+import { sourcesApi, workspacesApi, graphApi, authApi, type WorkspaceMemberAPI, type AuthUser, type Workspace } from './services/api';
 
 // Default workspace ID — in production this comes from auth session
 const DEFAULT_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
@@ -86,11 +87,22 @@ function memberApiToLocal(m: WorkspaceMemberAPI): WorkspaceMember {
 function WorkspaceContainer({
   onBackToLanding,
   user,
+  onOpenAuth,
+  onLogout,
 }: {
   onBackToLanding: () => void;
   user: AuthUser | null;
+  onOpenAuth: () => void;
+  onLogout: () => void;
 }) {
   const [workspaceTab, setWorkspaceTab] = useState<'graph' | 'chat'>('graph');
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(DEFAULT_WORKSPACE_ID);
+  const [workspacesList, setWorkspacesList] = useState<Workspace[]>([]);
+  const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
+  const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [newWorkspaceDesc, setNewWorkspaceDesc] = useState('');
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [nodes, setNodes] = useState<Node[]>(INITIAL_WORKSPACE_NODES as unknown as Node[]);
   const [edges, setEdges] = useState<Edge[]>(INITIAL_WORKSPACE_EDGES);
   const [selectedNodeId, setSelectedNodeId] = useState<string>(INITIAL_WORKSPACE_NODES[0].id);
@@ -115,67 +127,145 @@ function WorkspaceContainer({
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Load initial sources and members from backend API
+  // Fetch workspaces list
   useEffect(() => {
-    sourcesApi
-      .list(DEFAULT_WORKSPACE_ID)
+    workspacesApi
+      .list()
       .then((data) => {
         if (data && data.length > 0) {
+          setWorkspacesList(data);
+          if (!data.some((w) => w.id === currentWorkspaceId)) {
+            setCurrentWorkspaceId(data[0].id);
+          }
+        } else {
+          setWorkspacesList([
+            {
+              id: DEFAULT_WORKSPACE_ID,
+              name: 'vintrix-monorepo',
+              description: 'Primary codebase workspace',
+              ownerId: '00000000-0000-0000-0000-000000000001',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ]);
+        }
+      })
+      .catch(() => {
+        setWorkspacesList([
+          {
+            id: DEFAULT_WORKSPACE_ID,
+            name: 'vintrix-monorepo',
+            description: 'Primary codebase workspace',
+            ownerId: '00000000-0000-0000-0000-000000000001',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ]);
+      });
+  }, []);
+
+  // Load sources, members, and graph whenever active workspace changes
+  useEffect(() => {
+    sourcesApi
+      .list(currentWorkspaceId)
+      .then((data) => {
+        if (data) {
           setSourcesList(data.map(sourceApiToItem));
         }
       })
       .catch(() => {
-        // Fallback default sample source when backend not running
-        setSourcesList([
-          {
-            id: 'src-1',
-            name: 'vintrix-web',
-            type: 'git',
-            location: 'github.com/novintriantonius/vintrix',
-            branchOrPort: 'main',
-            indexPaths: ['apps/web/src/'],
-            status: 'synced',
-            lastSyncedAt: 'Just now',
-            nodesCount: 4,
-          },
-          {
-            id: 'src-2',
-            name: 'vintrix-api',
-            type: 'git',
-            location: 'github.com/novintriantonius/vintrix',
-            branchOrPort: 'main',
-            indexPaths: ['apps/api/src/'],
-            status: 'synced',
-            lastSyncedAt: 'Just now',
-            nodesCount: 3,
-          },
-        ]);
+        const stored = localStorage.getItem(`vintrix_sources_${currentWorkspaceId}`);
+        if (!stored) {
+          setSourcesList([]);
+        }
       });
 
     workspacesApi
-      .listMembers(DEFAULT_WORKSPACE_ID)
+      .listMembers(currentWorkspaceId)
       .then((data) => {
         if (data && data.length > 0) {
           setMembersList(data.map(memberApiToLocal));
         }
       })
       .catch(() => {
-        // Fallback default sample members
         setMembersList([
           {
-            userId: 'user-1',
-            name: 'Novin Triantonius',
-            email: 'novin@vintrix.ai',
+            userId: user?.id || 'user-1',
+            name: user?.displayName || 'Workspace Admin',
+            email: user?.email || 'admin@vintrix.ai',
             roleName: 'admin',
             invitedAt: 'Workspace Owner',
           },
         ]);
       });
-  }, []);
+
+    graphApi
+      .getWorkspaceGraph<CodeNodeData>(currentWorkspaceId)
+      .then((res) => {
+        if (res && res.nodes && res.nodes.length > 0) {
+          setNodes(res.nodes as unknown as Node[]);
+          if (res.edges && res.edges.length > 0) {
+            setEdges(res.edges as unknown as Edge[]);
+          }
+        } else {
+          setNodes(INITIAL_WORKSPACE_NODES as unknown as Node[]);
+          setEdges(INITIAL_WORKSPACE_EDGES);
+        }
+      })
+      .catch(() => {
+        setNodes(INITIAL_WORKSPACE_NODES as unknown as Node[]);
+        setEdges(INITIAL_WORKSPACE_EDGES);
+      });
+  }, [currentWorkspaceId, user]);
+
+  const handleCreateWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorkspaceName.trim()) return;
+    setIsCreatingWorkspace(true);
+    try {
+      const created = await workspacesApi.create({
+        name: newWorkspaceName.trim(),
+        description: newWorkspaceDesc.trim() || undefined,
+        ownerId: user?.id || '00000000-0000-0000-0000-000000000001',
+      });
+      setWorkspacesList((prev) => [created, ...prev]);
+      setCurrentWorkspaceId(created.id);
+      setIsCreateWorkspaceOpen(false);
+      setNewWorkspaceName('');
+      setNewWorkspaceDesc('');
+      addToast({
+        type: 'success',
+        title: 'Workspace Created',
+        description: `Switched to newly created workspace "${created.name}".`,
+      });
+    } catch {
+      // Offline fallback
+      const localWorkspace: Workspace = {
+        id: `ws-${Date.now()}`,
+        name: newWorkspaceName.trim(),
+        description: newWorkspaceDesc.trim() || null,
+        ownerId: user?.id || '00000000-0000-0000-0000-000000000001',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setWorkspacesList((prev) => [localWorkspace, ...prev]);
+      setCurrentWorkspaceId(localWorkspace.id);
+      setIsCreateWorkspaceOpen(false);
+      setNewWorkspaceName('');
+      setNewWorkspaceDesc('');
+      addToast({
+        type: 'success',
+        title: 'Workspace Created',
+        description: `Switched to workspace "${localWorkspace.name}".`,
+      });
+    } finally {
+      setIsCreatingWorkspace(false);
+    }
+  };
 
   const handleInviteMember = async (email: string, roleName: 'admin' | 'member' | 'viewer') => {
     try {
-      const res = await workspacesApi.inviteMember(DEFAULT_WORKSPACE_ID, email, roleName);
+      const res = await workspacesApi.inviteMember(currentWorkspaceId, email, roleName);
       if (res.member) {
         setMembersList((prev) => [...prev, memberApiToLocal(res.member)]);
       }
@@ -200,7 +290,7 @@ function WorkspaceContainer({
   const handleUpdateRole = async (userId: string, newRole: 'admin' | 'member' | 'viewer') => {
     const member = membersList.find((m) => m.userId === userId);
     try {
-      await workspacesApi.updateMemberRole(DEFAULT_WORKSPACE_ID, userId, newRole);
+      await workspacesApi.updateMemberRole(currentWorkspaceId, userId, newRole);
     } catch {
       // ignore
     }
@@ -217,7 +307,7 @@ function WorkspaceContainer({
   const handleRemoveMember = async (userId: string) => {
     const member = membersList.find((m) => m.userId === userId);
     try {
-      await workspacesApi.removeMember(DEFAULT_WORKSPACE_ID, userId);
+      await workspacesApi.removeMember(currentWorkspaceId, userId);
     } catch {
       // ignore
     }
@@ -229,7 +319,7 @@ function WorkspaceContainer({
     });
   };
 
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter } = useReactFlow();
 
   const gitSourcesCount = sourcesList.filter((s) => s.type === 'git').length;
   const sshSourcesCount = sourcesList.filter((s) => s.type === 'ssh').length;
@@ -241,7 +331,11 @@ function WorkspaceContainer({
     } catch {
       // ignore
     }
-    setSourcesList((prev) => prev.filter((s) => s.id !== sourceId));
+    setSourcesList((prev) => {
+      const updated = prev.filter((s) => s.id !== sourceId);
+      localStorage.setItem('vintrix_sources_initialized', 'true');
+      return updated;
+    });
     if (targetSource) {
       setNodes((prev) =>
         prev.filter((node) => {
@@ -336,12 +430,36 @@ function WorkspaceContainer({
     return found ? (found.data as unknown as CodeNodeData) : null;
   }, [nodes, selectedNodeId]);
 
+  const focusNodeOnCanvas = useCallback(
+    (nodeId: string) => {
+      const target = nodes.find((n) => n.id === nodeId);
+      if (target && target.position) {
+        setCenter(target.position.x + 130, target.position.y + 70, {
+          zoom: 1.15,
+          duration: 750,
+        });
+      }
+    },
+    [nodes, setCenter]
+  );
+
   const handleSelectNodeByPath = (path: string) => {
     const target = nodes.find((n) => (n.data as unknown as CodeNodeData)?.filePath === path);
     if (target) {
       setSelectedNodeId(target.id);
+      focusNodeOnCanvas(target.id);
     }
   };
+
+  // Auto-focus first matching node when user types a search query
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    const matched = filteredNodes[0];
+    if (matched) {
+      setSelectedNodeId(matched.id);
+      focusNodeOnCanvas(matched.id);
+    }
+  }, [searchQuery, filteredNodes, focusNodeOnCanvas]);
 
   return (
     <div className="flex h-screen w-screen bg-[#050a10] text-[#e0e0e0] font-sans overflow-hidden">
@@ -433,7 +551,7 @@ function WorkspaceContainer({
             <Layers size={13} /> Nodes: {nodes.length}
           </span>
 
-          {user && (
+          {user ? (
             <div className="flex items-center gap-1.5 pl-1.5 border-l border-white/[0.08]">
               <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-sky-400 to-indigo-500 text-[10px] font-bold text-slate-950 flex items-center justify-center shrink-0">
                 {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
@@ -441,7 +559,22 @@ function WorkspaceContainer({
               <span className="hidden lg:inline text-[11px] text-slate-300 font-sans truncate max-w-[90px]">
                 {user.displayName || user.email}
               </span>
+              <button
+                onClick={onLogout}
+                className="p-1 rounded-md text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
+                title="Sign out"
+              >
+                <LogOut size={13} />
+              </button>
             </div>
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 border border-white/[0.1] transition-all font-sans font-medium text-xs shrink-0"
+            >
+              <LogIn size={13} className="text-sky-400" />
+              <span>Sign in</span>
+            </button>
           )}
 
           {/* Mobile Inspector Toggle */}
@@ -483,6 +616,7 @@ function WorkspaceContainer({
                 onEdgesChange={onEdgesChange}
                 onNodeClick={(_, node) => {
                   setSelectedNodeId(node.id);
+                  focusNodeOnCanvas(node.id);
                   setIsCodeViewerOpen(true);
                 }}
                 fitView
@@ -536,6 +670,21 @@ function WorkspaceContainer({
           };
           setSourcesList((prev) => [item, ...prev]);
 
+          // Fetch freshly indexed AST knowledge nodes from API for this source
+          graphApi
+            .getWorkspaceGraph<CodeNodeData>(DEFAULT_WORKSPACE_ID)
+            .then((res) => {
+              if (res && res.nodes && res.nodes.length > 0) {
+                setNodes(res.nodes as unknown as Node[]);
+                if (res.edges && res.edges.length > 0) {
+                  setEdges(res.edges as unknown as Edge[]);
+                }
+              }
+            })
+            .catch(() => {
+              // fallback
+            });
+
           // Provide immediate success prompt to user
           addToast({
             type: 'success',
@@ -584,10 +733,38 @@ export default function App() {
     }
   });
 
-  const handleAuthSuccess = (user: AuthUser) => {
+  const handleAuthSuccess = (user: AuthUser, token: string) => {
+    localStorage.setItem('vintrix_token', token);
+    localStorage.setItem('vintrix_user', JSON.stringify(user));
     setCurrentUser(user);
-    setView('app');
+    setIsAuthModalOpen(false);
   };
+
+  const handleLogout = () => {
+    localStorage.removeItem('vintrix_token');
+    localStorage.removeItem('vintrix_user');
+    setCurrentUser(null);
+  };
+
+  // Validate session token on mount with /auth/me
+  useEffect(() => {
+    const token = localStorage.getItem('vintrix_token');
+    if (token) {
+      authApi
+        .getCurrentUser(token)
+        .then((res) => {
+          if (res?.authenticated && res.user) {
+            setCurrentUser(res.user);
+          }
+        })
+        .catch(() => {
+          // Token invalid or expired
+          localStorage.removeItem('vintrix_token');
+          localStorage.removeItem('vintrix_user');
+          setCurrentUser(null);
+        });
+    }
+  }, []);
 
   if (view === 'landing') {
     return (
@@ -595,6 +772,8 @@ export default function App() {
         <Nav
           onOpenApp={() => setView('app')}
           onOpenAuth={() => setIsAuthModalOpen(true)}
+          user={currentUser}
+          onLogout={handleLogout}
         />
         <main>
           <Hero onOpenApp={() => setView('app')} />
@@ -616,7 +795,17 @@ export default function App() {
 
   return (
     <ReactFlowProvider>
-      <WorkspaceContainer onBackToLanding={() => setView('landing')} user={currentUser} />
+      <WorkspaceContainer
+        onBackToLanding={() => setView('landing')}
+        user={currentUser}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onLogout={handleLogout}
+      />
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={handleAuthSuccess}
+      />
     </ReactFlowProvider>
   );
 }

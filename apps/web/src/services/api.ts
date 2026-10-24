@@ -258,3 +258,32 @@ export const authApi = {
       headers: { Authorization: `Bearer ${token}` },
     }),
 };
+
+// ─── Knowledge Graph API ──────────────────────────────────────────────────────
+
+export interface GraphResponse<TNodeData = unknown> {
+  workspaceId: string;
+  nodes: Array<{
+    id: string;
+    type: string;
+    position: { x: number; y: number };
+    data: TNodeData;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    animated?: boolean;
+    style?: Record<string, unknown>;
+    data?: Record<string, unknown>;
+  }>;
+  totalNodes: number;
+  totalEdges: number;
+}
+
+export const graphApi = {
+  getWorkspaceGraph: <T = unknown>(workspaceId: string, sourceId?: string) => {
+    const query = sourceId ? `?sourceId=${encodeURIComponent(sourceId)}` : '';
+    return request<GraphResponse<T>>(`/graph/workspace/${workspaceId}${query}`);
+  },
+};

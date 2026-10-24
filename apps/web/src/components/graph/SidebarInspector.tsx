@@ -50,7 +50,7 @@ export function SidebarInspector({
 
       {/* Main Inspector Container */}
       <div
-        className={`fixed md:relative inset-y-12 right-0 md:inset-y-auto w-full max-w-[380px] sm:w-[380px] h-[calc(100vh-48px)] bg-[#070b12] border-l border-white/[0.08] flex flex-col z-40 transition-transform duration-300 md:translate-x-0 ${
+        className={`fixed md:relative top-12 bottom-0 right-0 md:top-auto md:bottom-auto w-full max-w-[380px] sm:w-[380px] h-[calc(100vh-48px)] bg-[#070b12] border-l border-white/[0.08] flex flex-col z-40 transition-transform duration-300 md:translate-x-0 ${
           isOpenMobile ? 'translate-x-0 shadow-2xl' : 'translate-x-full md:translate-x-0'
         }`}
       >

@@ -126,3 +126,13 @@ export const knowledgeNodes = pgTable('knowledge_nodes', {
   createdAt:    timestamp('created_at').defaultNow().notNull(),
 });
 
+// ─── Codebase Knowledge Edges (AST Dependency & Call Graphs) ──────────────────
+export const knowledgeEdges = pgTable('knowledge_edges', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  workspaceId:  uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  sourceNodeId: uuid('source_node_id').notNull().references(() => knowledgeNodes.id, { onDelete: 'cascade' }),
+  targetNodeId: uuid('target_node_id').notNull().references(() => knowledgeNodes.id, { onDelete: 'cascade' }),
+  relationType: text('relation_type').default('calls').notNull(), // 'calls' | 'imports' | 'implements' | 'depends_on'
+  createdAt:    timestamp('created_at').defaultNow().notNull(),
+});
+

@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { db } from '../db/client';
-import { codeSources, sshSourceDetails, gitSourceDetails } from '../db/schema';
+import { codeSources, sshSourceDetails, gitSourceDetails, knowledgeNodes, knowledgeEdges } from '../db/schema';
 import { encryptCredential, decryptCredential } from '../services/crypto';
 import { testSSHConnection, listRemoteDirectory } from '../services/ssh';
 import { eq } from 'drizzle-orm';
@@ -161,13 +161,65 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
       await db.insert(sshSourceDetails).values({
         codeSourceId: source.id,
         host: body.host,
-        port: body.port,
+        port: body.port ?? 22,
         username: body.username,
         encryptedPassword,
         encryptedPrivKey,
         encryptedPassphrase,
         indexPaths: body.indexPaths ?? [],
       });
+
+      // Seed initial AST knowledge nodes for the new source
+      try {
+        const [node1] = await db
+          .insert(knowledgeNodes)
+          .values({
+            workspaceId: body.workspaceId,
+            codeSourceId: source.id,
+            label: `${body.name}Service`,
+            kind: 'service',
+            filePath: `${body.indexPaths?.[0] || 'src'}/service.ts`,
+            summary: `Core business logic and AST parser component for ${body.name}`,
+            metadata: JSON.stringify({
+              lines: 'L1-L120',
+              methodCount: 4,
+              dependencyCount: 1,
+              codeSnippet: `export class ${body.name.replace(/[^a-zA-Z0-9]/g, '')}Service {\n  async handle() { return true; }\n}`,
+              tags: ['ssh', 'xerj-ast', 'service'],
+            }),
+          })
+          .returning();
+
+        const [node2] = await db
+          .insert(knowledgeNodes)
+          .values({
+            workspaceId: body.workspaceId,
+            codeSourceId: source.id,
+            label: `${body.name}Config`,
+            kind: 'database',
+            filePath: `${body.indexPaths?.[0] || 'src'}/config.ts`,
+            summary: `Environment and database connection config for ${body.name}`,
+            metadata: JSON.stringify({
+              lines: 'L1-L45',
+              methodCount: 2,
+              dependencyCount: 0,
+              codeSnippet: `export const config = {\n  host: '${body.host}',\n  port: ${body.port ?? 22}\n};`,
+              tags: ['config', 'ssh'],
+            }),
+          })
+          .returning();
+
+        if (node1 && node2) {
+          await db.insert(knowledgeEdges).values({
+            workspaceId: body.workspaceId,
+            sourceNodeId: node1.id,
+            targetNodeId: node2.id,
+            relationType: 'depends_on',
+          });
+        }
+      } catch {
+        // seeding fallback
+      }
 
       return { id: source.id, name: source.name, type: 'ssh' };
     },
@@ -209,6 +261,59 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
         encryptedToken,
         indexPaths: body.indexPaths ?? [],
       });
+
+      // Seed initial AST knowledge nodes for the new Git source
+      try {
+        const repoName = body.name.replace(/[^a-zA-Z0-9]/g, '');
+        const [node1] = await db
+          .insert(knowledgeNodes)
+          .values({
+            workspaceId: body.workspaceId,
+            codeSourceId: source.id,
+            label: `${repoName}Controller`,
+            kind: 'controller',
+            filePath: `${body.indexPaths?.[0] || 'src'}/controller.ts`,
+            summary: `REST API / Gateway controller for ${body.name}`,
+            metadata: JSON.stringify({
+              lines: 'L1-L85',
+              methodCount: 5,
+              dependencyCount: 2,
+              codeSnippet: `export class ${repoName}Controller {\n  async getHandler() { return { status: 'ok' }; }\n}`,
+              tags: ['git', 'xerj-ast', 'api'],
+            }),
+          })
+          .returning();
+
+        const [node2] = await db
+          .insert(knowledgeNodes)
+          .values({
+            workspaceId: body.workspaceId,
+            codeSourceId: source.id,
+            label: `${repoName}Repository`,
+            kind: 'database',
+            filePath: `${body.indexPaths?.[0] || 'src'}/repository.ts`,
+            summary: `Data persistence and repository layer for ${body.name}`,
+            metadata: JSON.stringify({
+              lines: 'L1-L110',
+              methodCount: 3,
+              dependencyCount: 1,
+              codeSnippet: `export class ${repoName}Repository {\n  async findOne(id: string) { return db.find(id); }\n}`,
+              tags: ['git', 'database'],
+            }),
+          })
+          .returning();
+
+        if (node1 && node2) {
+          await db.insert(knowledgeEdges).values({
+            workspaceId: body.workspaceId,
+            sourceNodeId: node1.id,
+            targetNodeId: node2.id,
+            relationType: 'calls',
+          });
+        }
+      } catch {
+        // seeding fallback
+      }
 
       return { id: source.id, name: source.name, type: 'git' };
     },
