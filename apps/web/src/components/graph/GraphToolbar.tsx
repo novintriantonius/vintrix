@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import {
   MagnifyingGlass,
   Stack,
@@ -8,6 +9,8 @@ import {
   ShieldCheck,
   DownloadSimple,
   FileText,
+  CaretDown,
+  Check,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
 
@@ -50,25 +53,85 @@ export function GraphToolbar({
   onExportMermaid,
   onExportReport,
 }: GraphToolbarProps) {
+  const [isScopeDropdownOpen, setIsScopeDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close custom dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsScopeDropdownOpen(false);
+      }
+    }
+    if (isScopeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isScopeDropdownOpen]);
+
+  const currentSourceLabel =
+    selectedSource === 'all'
+      ? 'All Sources'
+      : availableSources.find((s) => s.id === selectedSource)?.label || selectedSource;
+
   return (
     <div className="absolute top-3 left-3 right-3 sm:right-auto sm:top-4 sm:left-4 z-10 flex items-center gap-1.5 sm:gap-2 bg-[#080d16]/95 backdrop-blur-md border border-white/[0.08] p-1 rounded-xl shadow-xl max-w-[calc(100vw-24px)] overflow-x-auto no-scrollbar">
-      {/* Workspace Source Filter (Frontend, Backend, SSH, All) */}
-      <div className="flex items-center gap-1 bg-[#050912]/80 border border-white/[0.06] rounded-lg px-2 py-1 shrink-0">
-        <span className="text-[10px] font-mono text-slate-500 uppercase hidden sm:inline">Scope:</span>
-        <select
-          value={selectedSource}
-          onChange={(e) => onSourceSelect(e.target.value)}
-          className="bg-transparent text-[11px] font-medium text-sky-400 outline-none cursor-pointer max-w-[110px] sm:max-w-none truncate"
+      {/* Custom Scope Dropdown (replaces native <select>) */}
+      <div className="relative shrink-0" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={() => setIsScopeDropdownOpen((prev) => !prev)}
+          className="flex items-center gap-1.5 bg-[#050912]/80 hover:bg-[#070e1b] border border-white/[0.06] hover:border-white/[0.12] rounded-lg px-2 py-1 text-[11px] font-medium text-sky-400 transition-colors"
+          title="Filter graph by code source"
         >
-          <option value="all" className="bg-[#080d16] text-slate-200">
-            All Sources
-          </option>
-          {availableSources.map((s) => (
-            <option key={s.id} value={s.id} className="bg-[#080d16] text-slate-200">
-              {s.label}
-            </option>
-          ))}
-        </select>
+          <span className="text-[10px] font-mono text-slate-500 uppercase hidden sm:inline">Scope:</span>
+          <span className="max-w-[100px] sm:max-w-[130px] truncate text-left">{currentSourceLabel}</span>
+          <CaretDown size={11} className={`text-slate-400 transition-transform ${isScopeDropdownOpen ? 'rotate-180 text-sky-400' : ''}`} />
+        </button>
+
+        {isScopeDropdownOpen && (
+          <div className="absolute left-0 top-full mt-1.5 w-48 bg-[#080d16] border border-white/[0.1] rounded-xl shadow-2xl p-1 z-50 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150">
+            <button
+              type="button"
+              onClick={() => {
+                onSourceSelect('all');
+                setIsScopeDropdownOpen(false);
+              }}
+              className={`flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                selectedSource === 'all'
+                  ? 'bg-sky-500/15 text-sky-300 font-semibold'
+                  : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'
+              }`}
+            >
+              <span>All Sources</span>
+              {selectedSource === 'all' && <Check size={12} className="text-sky-400" />}
+            </button>
+
+            {availableSources.map((s) => {
+              const isSelected = selectedSource === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => {
+                    onSourceSelect(s.id);
+                    setIsScopeDropdownOpen(false);
+                  }}
+                  className={`flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                    isSelected
+                      ? 'bg-sky-500/15 text-sky-300 font-semibold'
+                      : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'
+                  }`}
+                >
+                  <span className="truncate pr-2">{s.label}</span>
+                  {isSelected && <Check size={12} className="text-sky-400 shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="h-3.5 w-px bg-white/[0.08] shrink-0" />

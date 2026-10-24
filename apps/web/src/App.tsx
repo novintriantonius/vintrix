@@ -1240,8 +1240,9 @@ graph TD
         isOpen={isCreateWorkspaceOpen}
         onClose={() => setIsCreateWorkspaceOpen(false)}
         title="Create New Workspace"
+        subtitle="Set up an isolated architecture workspace and knowledge graph."
       >
-        <div className="space-y-4">
+        <div className="p-5 sm:p-6 space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">Workspace Name</label>
             <input
@@ -1249,7 +1250,7 @@ graph TD
               value={newWorkspaceName}
               onChange={(e) => setNewWorkspaceName(e.target.value)}
               placeholder="e.g. payment-service-core"
-              className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+              className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono transition-colors"
             />
           </div>
           <div>
@@ -1258,11 +1259,11 @@ graph TD
               value={newWorkspaceDesc}
               onChange={(e) => setNewWorkspaceDesc(e.target.value)}
               placeholder="Brief context about this microservice or mono-repo..."
-              rows={2}
-              className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-sans resize-none"
+              rows={3}
+              className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-sans resize-none transition-colors"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
             <button
               onClick={() => setIsCreateWorkspaceOpen(false)}
               className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors"
@@ -1272,7 +1273,7 @@ graph TD
             <button
               disabled={!newWorkspaceName.trim() || isCreatingWorkspace}
               onClick={handleCreateWorkspace}
-              className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-colors disabled:opacity-50 shadow-sm"
             >
               {isCreatingWorkspace ? 'Creating...' : 'Create Workspace'}
             </button>

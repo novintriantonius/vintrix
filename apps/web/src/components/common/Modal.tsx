@@ -48,11 +48,16 @@ export function Modal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
     >
       <div
         ref={modalRef}
-        className={`bg-[#080d16] border border-white/[0.08] rounded-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} overflow-hidden shadow-2xl flex flex-col relative`}
+        className={`bg-[#080d16] border border-white/[0.08] rounded-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} overflow-hidden shadow-2xl flex flex-col relative my-auto`}
       >
         {/* Header */}
         <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between shrink-0">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Users,
   UserPlus,
@@ -8,6 +8,7 @@ import {
   Crown,
   Link,
   Check,
+  ChevronDown,
 } from 'lucide-react';
 import { Modal } from '../common';
 
@@ -72,8 +73,24 @@ export function WorkspaceTeamModal({
 }: WorkspaceTeamModalProps) {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'member' | 'viewer'>('member');
+  const [isInviteRoleOpen, setIsInviteRoleOpen] = useState(false);
+  const [openMemberRoleId, setOpenMemberRoleId] = useState<string | null>(null);
+  const inviteRoleRef = useRef<HTMLDivElement>(null);
   const [filterQuery, setFilterQuery] = useState('');
   const [inviteCopied, setInviteCopied] = useState(false);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (inviteRoleRef.current && !inviteRoleRef.current.contains(e.target as Node)) {
+        setIsInviteRoleOpen(false);
+      }
+      if (!((e.target as HTMLElement).closest?.('.member-role-dropdown'))) {
+        setOpenMemberRoleId(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleSendInvite = (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,15 +171,40 @@ export function WorkspaceTeamModal({
             </div>
 
             <div className="flex gap-2">
-              <select
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member' | 'viewer')}
-                className="bg-[#080d16] border border-white/[0.08] focus:border-sky-500/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none capitalize"
-              >
-                <option value="admin">Admin</option>
-                <option value="member">Member</option>
-                <option value="viewer">Viewer</option>
-              </select>
+              {/* Custom Invite Role Selector */}
+              <div className="relative" ref={inviteRoleRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsInviteRoleOpen((prev) => !prev)}
+                  className="h-full flex items-center gap-1.5 bg-[#080d16] border border-white/[0.08] hover:border-sky-500/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none capitalize transition-colors"
+                >
+                  <span>{inviteRole}</span>
+                  <ChevronDown size={13} className={`text-slate-400 transition-transform ${isInviteRoleOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isInviteRoleOpen && (
+                  <div className="absolute left-0 top-full mt-1 w-32 bg-[#080d16] border border-white/[0.1] rounded-xl shadow-2xl p-1 z-50 flex flex-col gap-0.5">
+                    {(['admin', 'member', 'viewer'] as const).map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => {
+                          setInviteRole(r);
+                          setIsInviteRoleOpen(false);
+                        }}
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs capitalize transition-colors ${
+                          inviteRole === r
+                            ? 'bg-sky-500/15 text-sky-300 font-semibold'
+                            : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'
+                        }`}
+                      >
+                        <span>{r}</span>
+                        {inviteRole === r && <Check size={12} className="text-sky-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <button
                 type="submit"
@@ -235,20 +277,48 @@ export function WorkspaceTeamModal({
                         Owner
                       </span>
                     ) : (
-                      <select
-                        value={member.roleName}
-                        onChange={(e) =>
-                          onUpdateRole(
-                            member.userId,
-                            e.target.value as 'admin' | 'member' | 'viewer',
-                          )
-                        }
-                        className={`px-2 py-1 rounded text-[10px] font-mono uppercase bg-[#080d16] border border-white/[0.08] focus:border-sky-500/50 outline-none cursor-pointer ${roleBadgeClass}`}
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="member">Member</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
+                      <div className="relative member-role-dropdown">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenMemberRoleId((prev) =>
+                              prev === member.userId ? null : member.userId,
+                            )
+                          }
+                          className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono uppercase bg-[#080d16] border border-white/[0.08] hover:border-sky-500/50 outline-none transition-colors ${roleBadgeClass}`}
+                        >
+                          <span>{member.roleName}</span>
+                          <ChevronDown
+                            size={10}
+                            className={`transition-transform ${
+                              openMemberRoleId === member.userId ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+
+                        {openMemberRoleId === member.userId && (
+                          <div className="absolute right-0 top-full mt-1 w-28 bg-[#080d16] border border-white/[0.1] rounded-xl shadow-2xl p-1 z-50 flex flex-col gap-0.5">
+                            {(['admin', 'member', 'viewer'] as const).map((r) => (
+                              <button
+                                key={r}
+                                type="button"
+                                onClick={() => {
+                                  onUpdateRole(member.userId, r);
+                                  setOpenMemberRoleId(null);
+                                }}
+                                className={`flex items-center justify-between px-2 py-1 rounded text-[10px] font-mono uppercase transition-colors ${
+                                  member.roleName === r
+                                    ? 'bg-sky-500/15 text-sky-300 font-semibold'
+                                    : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'
+                                }`}
+                              >
+                                <span>{r}</span>
+                                {member.roleName === r && <Check size={11} className="text-sky-400" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {!isOwner && (
