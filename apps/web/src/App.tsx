@@ -1068,8 +1068,31 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  // Validate session token on mount with /auth/me
+  // Validate session token on mount with /auth/me, or catch OAuth URL query callback params
   useEffect(() => {
+    // 1. Check if returning from OAuth redirect with ?token=...&user=...
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthToken = urlParams.get('token');
+    const oauthUserStr = urlParams.get('user');
+
+    if (oauthToken && oauthUserStr) {
+      try {
+        const parsedUser = JSON.parse(decodeURIComponent(oauthUserStr));
+        localStorage.setItem('vintrix_token', oauthToken);
+        localStorage.setItem('vintrix_user', JSON.stringify(parsedUser));
+        setCurrentUser(parsedUser);
+        setView('app');
+
+        // Clean query params from browser URL bar without reload
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        return;
+      } catch {
+        // pass
+      }
+    }
+
+    // 2. Validate existing session token in localStorage
     const token = localStorage.getItem('vintrix_token');
     if (token) {
       authApi
