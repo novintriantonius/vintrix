@@ -230,7 +230,44 @@ function WorkspaceContainer({
         setNodes(INITIAL_WORKSPACE_NODES as unknown as Node[]);
         setEdges(INITIAL_WORKSPACE_EDGES);
       });
-  }, [currentWorkspaceId, user]);
+
+    // Subscribe to live Server-Sent Events (SSE) for background re-indexing & Git webhooks
+    const unsubscribe = sourcesApi.subscribeEvents(currentWorkspaceId, (evt) => {
+      if (evt.type === 'started') {
+        addToast({
+          type: 'info',
+          title: 'Codebase Re-indexing Started',
+          description: evt.message || `Started analyzing ${evt.sourceName || 'source'}...`,
+        });
+      } else if (evt.type === 'completed') {
+        addToast({
+          type: 'success',
+          title: 'AST Re-indexing Finished',
+          description: evt.message || `Scanned ${evt.nodesScanned} nodes & ${evt.edgesScanned} relationships.`,
+        });
+        // Silently reload sources & knowledge graph to show fresh nodes live
+        sourcesApi.list(currentWorkspaceId).then((data) => {
+          if (data) setSourcesList(data.map(sourceApiToItem));
+        });
+        graphApi.getWorkspaceGraph<CodeNodeData>(currentWorkspaceId).then((res) => {
+          if (res && res.nodes && res.nodes.length > 0) {
+            setNodes(res.nodes as unknown as Node[]);
+            if (res.edges) setEdges(res.edges as unknown as Edge[]);
+          }
+        });
+      } else if (evt.type === 'error') {
+        addToast({
+          type: 'error',
+          title: 'Re-indexing Issue',
+          description: evt.message || 'Error occurred during AST re-indexing.',
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentWorkspaceId, user, addToast]);
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();

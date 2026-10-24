@@ -5,6 +5,7 @@ import { encryptCredential, decryptCredential } from '../services/crypto';
 import { testSSHConnection, listRemoteDirectory, syncRemoteSSHDirectory } from '../services/ssh';
 import { syncGitRepository } from '../services/git';
 import { scanCodebaseDirectory } from '../services/astScanner';
+import { reindexEvents } from '../services/reindexEvents';
 import { eq } from 'drizzle-orm';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -26,6 +27,16 @@ export async function executeSourceReindex(sourceId: string): Promise<{
   if (!existing) {
     throw new Error('Source not found');
   }
+
+  reindexEvents.emitEvent({
+    type: 'started',
+    sourceId: existing.id,
+    sourceName: existing.name,
+    workspaceId: existing.workspaceId,
+    message: `Starting codebase scan and AST indexing for ${existing.name}...`,
+    progressPercent: 10,
+    timestamp: new Date().toISOString(),
+  });
 
   const cacheRoot = path.join(os.homedir(), '.vintrix', 'repos', existing.id);
   const rootRepoDir = path.resolve(process.cwd(), '../..');
@@ -104,6 +115,16 @@ export async function executeSourceReindex(sourceId: string): Promise<{
   }
 
   // Run AST parser
+  reindexEvents.emitEvent({
+    type: 'progress',
+    sourceId: existing.id,
+    sourceName: existing.name,
+    workspaceId: existing.workspaceId,
+    message: `Parsing multi-language AST trees in ${targetScanDir}...`,
+    progressPercent: 50,
+    timestamp: new Date().toISOString(),
+  });
+
   const { nodes: scannedNodes, edges: scannedEdges } = scanCodebaseDirectory(targetScanDir);
 
   if (scannedNodes.length > 0) {
@@ -159,15 +180,92 @@ export async function executeSourceReindex(sourceId: string): Promise<{
     .set({ isIndexed: true, lastIndexAt: new Date() })
     .where(eq(codeSources.id, existing.id));
 
-  return {
+  const resultPayload = {
     success: true,
     message: `Re-indexing complete. Scanned ${scannedNodes.length} AST nodes and ${scannedEdges.length} dependency edges.`,
     nodesScanned: scannedNodes.length,
     edgesScanned: scannedEdges.length,
   };
+
+  reindexEvents.emitEvent({
+    type: 'completed',
+    sourceId: existing.id,
+    sourceName: existing.name,
+    workspaceId: existing.workspaceId,
+    message: resultPayload.message,
+    progressPercent: 100,
+    nodesScanned: scannedNodes.length,
+    edgesScanned: scannedEdges.length,
+    timestamp: new Date().toISOString(),
+  });
+
+  return resultPayload;
 }
 
 export const sourcesRouter = new Elysia({ prefix: '/sources' })
+  // ─── Real-Time Reindex Event Stream (Server-Sent Events) ───────────────────
+  .get('/events', ({ query }) => {
+    const workspaceId = query.workspaceId;
+    const encoder = new TextEncoder();
+
+    let eventListener: (data: any) => void;
+    let heartbeatInterval: ReturnType<typeof setInterval>;
+
+    const stream = new ReadableStream({
+      start(controller) {
+        // Send initial connected ping
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              type: 'connected',
+              workspaceId,
+              message: 'Connected to live re-indexing event stream',
+              timestamp: new Date().toISOString(),
+            })}\n\n`,
+          ),
+        );
+
+        eventListener = (data: any) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // client disconnected
+          }
+        };
+
+        const eventName = workspaceId ? `reindex:${workspaceId}` : 'reindex';
+        reindexEvents.on(eventName, eventListener);
+
+        // Heartbeat comment every 15s to keep proxy/socket alive
+        heartbeatInterval = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+          } catch {
+            clearInterval(heartbeatInterval);
+          }
+        }, 15000);
+      },
+      cancel() {
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        const eventName = workspaceId ? `reindex:${workspaceId}` : 'reindex';
+        if (eventListener) {
+          reindexEvents.off(eventName, eventListener);
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      },
+    });
+  }, {
+    query: t.Object({
+      workspaceId: t.Optional(t.String()),
+    }),
+  })
   // ─── List sources for a workspace ───────────────────────────────────────────
   .get('/workspace/:workspaceId', async ({ params }) => {
     const sources = await db

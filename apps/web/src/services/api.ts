@@ -156,6 +156,24 @@ export const sourcesApi = {
 
   delete: (sourceId: string) =>
     request<{ success: boolean }>(`/sources/${sourceId}`, { method: 'DELETE' }),
+
+  subscribeEvents: (workspaceId: string, onEvent: (event: any) => void) => {
+    const url = `${BASE}/sources/events?workspaceId=${encodeURIComponent(workspaceId)}`;
+    const eventSource = new EventSource(url);
+
+    eventSource.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        onEvent(data);
+      } catch {
+        // ignore non-json
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  },
 };
 
 // ─── AI Types ─────────────────────────────────────────────────────────────────
