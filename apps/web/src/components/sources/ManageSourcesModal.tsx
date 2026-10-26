@@ -164,13 +164,39 @@ export function ManageSourcesModal({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 pt-1">
-                    <span className="flex items-center gap-1">
-                      <CheckCircle2 size={12} className="text-emerald-400" />
-                      <span>{source.status === 'synced' ? 'Indexed' : 'Syncing'}</span>
+                    <span className="flex items-center gap-1.5">
+                      {isSyncing || source.status === 'indexing' ? (
+                        <>
+                          <RefreshCw size={12} className="text-amber-400 animate-spin" />
+                          <span className="text-amber-300 font-medium">Indexing AST & Parsing AST...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 size={12} className="text-emerald-400" />
+                          <span className="text-emerald-400">{source.status === 'synced' ? 'Indexed' : 'Syncing'}</span>
+                        </>
+                      )}
                     </span>
                     <span>•</span>
                     <span className="font-mono text-[10px]">{source.lastSyncedAt}</span>
+                    {source.nodesCount > 0 && (
+                      <>
+                        <span>•</span>
+                        <span className="font-mono text-[10px] text-sky-400">{source.nodesCount} indexed components</span>
+                      </>
+                    )}
                   </div>
+                  {(isSyncing || source.status === 'indexing') && (
+                    <div className="pt-2">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mb-1">
+                        <span>AST Tree-sitter tokenization</span>
+                        <span className="text-amber-300">In progress...</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full animate-pulse w-3/4" />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">

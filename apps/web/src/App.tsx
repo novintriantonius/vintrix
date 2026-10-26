@@ -110,8 +110,24 @@ function WorkspaceContainer({
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [newWorkspaceDesc, setNewWorkspaceDesc] = useState('');
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
+  const [nodes, setNodes] = useState<Node[]>(() => {
+    try {
+      const activeWs = localStorage.getItem('vintrix_active_workspace') || '';
+      const cached = localStorage.getItem(`vintrix_nodes_${activeWs}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [edges, setEdges] = useState<Edge[]>(() => {
+    try {
+      const activeWs = localStorage.getItem('vintrix_active_workspace') || '';
+      const cached = localStorage.getItem(`vintrix_edges_${activeWs}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
@@ -306,24 +322,44 @@ function WorkspaceContainer({
       return;
     }
 
+    // 1. Try loading cached nodes and edges for this workspace
+    try {
+      const cachedNodes = localStorage.getItem(`vintrix_nodes_${currentWorkspaceId}`);
+      const cachedEdges = localStorage.getItem(`vintrix_edges_${currentWorkspaceId}`);
+      if (cachedNodes) {
+        setNodes(JSON.parse(cachedNodes));
+      }
+      if (cachedEdges) {
+        setEdges(JSON.parse(cachedEdges));
+      }
+    } catch {
+      // pass
+    }
+
     graphApi
       .getWorkspaceGraph<CodeNodeData>(currentWorkspaceId)
       .then((res) => {
         if (res && res.nodes && res.nodes.length > 0) {
           setNodes(res.nodes as unknown as Node[]);
+          try {
+            localStorage.setItem(`vintrix_nodes_${currentWorkspaceId}`, JSON.stringify(res.nodes));
+          } catch {
+            // pass
+          }
           if (res.edges && res.edges.length > 0) {
             setEdges(res.edges as unknown as Edge[]);
+            try {
+              localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(res.edges));
+            } catch {
+              // pass
+            }
           } else {
             setEdges([]);
           }
-        } else {
-          setNodes([]);
-          setEdges([]);
         }
       })
       .catch(() => {
-        setNodes([]);
-        setEdges([]);
+        // Keep cached nodes if graph API fails
       });
 
     // Subscribe to live Server-Sent Events (SSE) for background re-indexing & Git webhooks
@@ -1717,7 +1753,7 @@ graph TD
               </ReactFlow>
 
               {/* Empty Workspace State Prompt */}
-              {displayNodes.length === 0 && (
+              {sourcesList.length === 0 && displayNodes.length === 0 && (
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                   <div className="pointer-events-auto max-w-md mx-auto text-center p-6 rounded-2xl bg-[#090e17]/80 backdrop-blur-md border border-white/10 shadow-2xl">
                     <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-3">
@@ -2036,6 +2072,12 @@ graph TD
 
               setNodes(sampleNodes);
               setEdges(sampleEdges);
+              try {
+                localStorage.setItem(`vintrix_nodes_${currentWorkspaceId}`, JSON.stringify(sampleNodes));
+                localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(sampleEdges));
+              } catch {
+                // pass
+              }
             });
 
           // Provide immediate success prompt to user
