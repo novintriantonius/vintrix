@@ -32,6 +32,7 @@ export interface CodeNodeData {
   isDimmed?: boolean;
   isBlastRadius?: boolean;
   blastRole?: 'target' | 'upstream' | 'downstream';
+  blastHop?: number;
   isCircular?: boolean;
   circularCycle?: string[];
   [key: string]: unknown;
@@ -119,6 +120,9 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
               : 'bg-indigo-950 text-indigo-300 border-indigo-500/40'
           }`}>
             {blastRole === 'upstream' ? '↑ CALLER' : '↓ CALLEE'}
+            {nodeData.blastHop !== undefined && nodeData.blastHop > 1 && (
+              <span className="ml-1 opacity-75">H{nodeData.blastHop}</span>
+            )}
           </span>
         </div>
       )}

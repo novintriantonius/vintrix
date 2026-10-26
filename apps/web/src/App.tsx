@@ -114,6 +114,7 @@ function WorkspaceContainer({
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [showOnlyHotspots, setShowOnlyHotspots] = useState(false);
   const [showOnlyCycles, setShowOnlyCycles] = useState(false);
+  const [blastDepth, setBlastDepth] = useState<1 | 2 | 'all'>(1);
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
@@ -557,45 +558,89 @@ function WorkspaceContainer({
     });
   }, [enrichedNodes, selectedKind, selectedSource, showOnlyHotspots, showOnlyCycles, searchQuery]);
 
-  // Compute blast radius: sets of upstream callers and downstream callees when a node is selected
+  // Compute blast radius: sets of upstream callers and downstream callees with multi-hop support
   const blastRadius = useMemo(() => {
     if (!selectedNodeId) {
       return {
-        upstreamNodeIds: new Set<string>(),
-        downstreamNodeIds: new Set<string>(),
+        upstreamNodeIds: new Map<string, number>(),
+        downstreamNodeIds: new Map<string, number>(),
         activeEdgeIds: new Set<string>(),
       };
     }
 
-    const upstreamNodeIds = new Set<string>();
-    const downstreamNodeIds = new Set<string>();
+    const upstreamNodeIds = new Map<string, number>();
+    const downstreamNodeIds = new Map<string, number>();
     const activeEdgeIds = new Set<string>();
 
+    const maxHops = blastDepth === 'all' ? Infinity : blastDepth;
+
+    // Build incoming and outgoing adjacency maps with edge ids
+    const incoming: Record<string, { source: string; edgeId: string }[]> = {};
+    const outgoing: Record<string, { target: string; edgeId: string }[]> = {};
+
     edges.forEach((edge) => {
-      if (edge.target === selectedNodeId) {
-        upstreamNodeIds.add(edge.source);
-        activeEdgeIds.add(edge.id);
-      }
-      if (edge.source === selectedNodeId) {
-        downstreamNodeIds.add(edge.target);
-        activeEdgeIds.add(edge.id);
-      }
+      if (!incoming[edge.target]) incoming[edge.target] = [];
+      incoming[edge.target].push({ source: edge.source, edgeId: edge.id });
+
+      if (!outgoing[edge.source]) outgoing[edge.source] = [];
+      outgoing[edge.source].push({ target: edge.target, edgeId: edge.id });
     });
 
-    return { upstreamNodeIds, downstreamNodeIds, activeEdgeIds };
-  }, [selectedNodeId, edges]);
+    // BFS for upstream callers
+    const upstreamQueue: { id: string; hop: number }[] = [{ id: selectedNodeId, hop: 0 }];
+    const visitedUpstream = new Set<string>([selectedNodeId]);
 
-  // Enriched filtered nodes with blast radius role and dimming attributes
+    while (upstreamQueue.length > 0) {
+      const { id, hop } = upstreamQueue.shift()!;
+      if (hop >= maxHops) continue;
+
+      const inc = incoming[id] || [];
+      for (const item of inc) {
+        activeEdgeIds.add(item.edgeId);
+        if (!visitedUpstream.has(item.source)) {
+          visitedUpstream.add(item.source);
+          upstreamNodeIds.set(item.source, hop + 1);
+          upstreamQueue.push({ id: item.source, hop: hop + 1 });
+        }
+      }
+    }
+
+    // BFS for downstream callees
+    const downstreamQueue: { id: string; hop: number }[] = [{ id: selectedNodeId, hop: 0 }];
+    const visitedDownstream = new Set<string>([selectedNodeId]);
+
+    while (downstreamQueue.length > 0) {
+      const { id, hop } = downstreamQueue.shift()!;
+      if (hop >= maxHops) continue;
+
+      const out = outgoing[id] || [];
+      for (const item of out) {
+        activeEdgeIds.add(item.edgeId);
+        if (!visitedDownstream.has(item.target)) {
+          visitedDownstream.add(item.target);
+          downstreamNodeIds.set(item.target, hop + 1);
+          downstreamQueue.push({ id: item.target, hop: hop + 1 });
+        }
+      }
+    }
+
+    return { upstreamNodeIds, downstreamNodeIds, activeEdgeIds };
+  }, [selectedNodeId, edges, blastDepth]);
+
+  // Enriched filtered nodes with blast radius role, hop level, and dimming attributes
   const displayNodes = useMemo(() => {
     if (!selectedNodeId) return filteredNodes;
 
     return filteredNodes.map((node) => {
       const isTarget = node.id === selectedNodeId;
-      const isUpstream = blastRadius.upstreamNodeIds.has(node.id);
-      const isDownstream = blastRadius.downstreamNodeIds.has(node.id);
+      const upstreamHop = blastRadius.upstreamNodeIds.get(node.id);
+      const downstreamHop = blastRadius.downstreamNodeIds.get(node.id);
+      const isUpstream = upstreamHop !== undefined;
+      const isDownstream = downstreamHop !== undefined;
       const isPartOfBlast = isTarget || isUpstream || isDownstream;
 
       const blastRole = isTarget ? 'target' : isUpstream ? 'upstream' : isDownstream ? 'downstream' : undefined;
+      const blastHop = upstreamHop ?? downstreamHop;
 
       return {
         ...node,
@@ -604,6 +649,7 @@ function WorkspaceContainer({
           isDimmed: !isPartOfBlast,
           isBlastRadius: isPartOfBlast,
           blastRole,
+          blastHop,
         },
       };
     });
@@ -1366,6 +1412,41 @@ graph TD
                 <Background color="#16243b" gap={20} size={1.5} />
                 <Controls className="!bg-[#0b1320] !border-[#16243b] !rounded-xl overflow-hidden [&>button]:!bg-[#0b1320] [&>button]:!border-[#16243b] [&>button]:!fill-slate-300 hover:[&>button]:!bg-slate-800" />
               </ReactFlow>
+
+              {/* Floating Multi-Hop Blast Radius Depth Controller */}
+              {selectedNodeId && (
+                <div className="absolute top-16 left-6 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0b1320]/90 backdrop-blur-md border border-white/10 shadow-xl text-xs font-mono">
+                  <div className="flex items-center gap-1 text-slate-400 mr-1 text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                    <span>Blast Depth:</span>
+                  </div>
+                  <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-lg border border-white/[0.06]">
+                    {(
+                      [
+                        { label: '1-Hop', val: 1 },
+                        { label: '2-Hops', val: 2 },
+                        { label: 'Full', val: 'all' },
+                      ] as const
+                    ).map((option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={() => setBlastDepth(option.val)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+                          blastDepth === option.val
+                            ? 'bg-sky-500 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-slate-500 ml-1">
+                    ↑{blastRadius.upstreamNodeIds.size} callers • ↓{blastRadius.downstreamNodeIds.size} callees
+                  </div>
+                </div>
+              )}
 
               {/* Bottom Sliding Code Viewer Drawer */}
               <SlidingCodeViewer
