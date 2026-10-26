@@ -892,17 +892,30 @@ function WorkspaceContainer({
         return acc;
       }, {} as Record<string, number>);
 
+      // Extract Hotspots (score >= 4) sorted by score descending
+      const hotspotItems = [...enrichedNodes]
+        .map((n) => n.data as unknown as CodeNodeData)
+        .filter((d) => (d.hotspotScore ?? 0) >= 4)
+        .sort((a, b) => (b.hotspotScore ?? 0) - (a.hotspotScore ?? 0));
+
+      // Extract Circular Dependency Cycles
+      const circularItems = [...enrichedNodes]
+        .map((n) => n.data as unknown as CodeNodeData)
+        .filter((d) => d.isCircular);
+
       let md = `# Architecture & Codebase Intelligence Report
 **Workspace:** ${activeWs}  
 **Generated At:** ${new Date().toLocaleString()}  
 **Indexed Nodes:** ${nodes.length}  
 **Active Filter Nodes:** ${filteredNodes.length}  
 **Relationships (Edges):** ${edges.length}  
+**Hotspot Centrality Bottlenecks:** ${hotspotItems.length}  
+**Circular Dependency Warnings:** ${circularItems.length}  
 
 ---
 
 ## 1. Executive Summary
-This report was generated automatically by **Vintrix Architecture Intelligence Engine**. It analyzes AST nodes, dependency flow, module responsibilities, and external system integrations mapped across this workspace.
+This report was generated automatically by **Vintrix Architecture Intelligence Engine**. It analyzes AST nodes, dependency flow, module responsibilities, coupling metrics, and architectural risk patterns across this workspace.
 
 ### Node Distribution
 | Category | Node Count | Description |
@@ -911,10 +924,43 @@ This report was generated automatically by **Vintrix Architecture Intelligence E
 | **Domain Services** | ${kindBreakdown['service'] || 0} | Core business logic & processing pipelines |
 | **Database & Schema** | ${kindBreakdown['database'] || 0} | Persistent models, ORM mappings & storage |
 | **Security & Auth** | ${kindBreakdown['security'] || 0} | Middleware, guards, tokens & encryption |
+| **Gateway / Integration** | ${kindBreakdown['gateway'] || 0} | External adapters, event buses & RPC routers |
 
 ---
 
-## 2. Codebase Symbol Directory
+## 2. Architectural Coupling & Hotspots (Centrality Analysis)
+Hotspots represent components with high in-degree (dependents) and out-degree (dependencies). A score $\\ge 4$ indicates a critical architectural bottleneck with high blast radius on modifications.
+
+${
+  hotspotItems.length > 0
+    ? `| Rank | Component | Kind | In-Degree (↓) | Out-Degree (↑) | Total Score | File Path |
+| :---: | :--- | :---: | :---: | :---: | :---: | :--- |
+${hotspotItems
+  .map(
+    (h, idx) =>
+      `| #${idx + 1} | **${h.label}** | \`${h.kind}\` | ${h.inDegree ?? 0} | ${h.outDegree ?? 0} | **${h.hotspotScore}** | \`${h.filePath}\` |`
+  )
+  .join('\n')}`
+    : `_No high-coupling bottlenecks detected (all nodes have coupling score < 4)._`
+}
+
+---
+
+## 3. Circular Dependency Audit (Cycle Detection)
+Circular dependencies ($A \\to B \\to A$) impede modular testing, increase compilation coupling, and risk deadlocks or infinite loops.
+
+${
+  circularItems.length > 0
+    ? `> **Warning:** Found **${circularItems.length}** components involved in circular dependency cycles.
+${circularItems
+  .map((c) => `- **${c.label}** (\`${c.filePath}\`): \`${c.circularCycle?.join(' -> ') || 'Cyclic reference'}\``)
+  .join('\n')}`
+    : `_Clean architecture verified: No circular dependency cycles found._`
+}
+
+---
+
+## 4. Codebase Symbol Directory
 Below is the categorized breakdown of all indexed source files in this workspace:
 
 `;
@@ -932,7 +978,7 @@ Below is the categorized breakdown of all indexed source files in this workspace
       });
 
       md += `---
-## 3. Dependency Flow Graph
+## 5. Dependency Flow Graph
 \`\`\`mermaid
 graph TD
 `;
