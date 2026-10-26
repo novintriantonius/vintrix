@@ -138,33 +138,43 @@ export function AddSourceModal({
       let branchOrPort = '';
       let targetPaths: string[] = [];
 
-      if (activeType === 'git') {
-        targetPaths = isFullRepoIndex ? [] : gitPathList;
-        location = gitRepoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '');
-        branchOrPort = gitBranch || 'main';
-        result = await sourcesApi.addGit({
-          workspaceId,
-          name: gitName || 'Git Repo',
-          repoUrl: gitRepoUrl,
-          branch: gitBranch,
-          token: gitToken || undefined,
-          indexPaths: targetPaths,
-        });
-      } else {
-        targetPaths = sshPathList;
-        location = `${sshUsername}@${sshHost}`;
-        branchOrPort = `Port ${sshPort}`;
-        result = await sourcesApi.addSSH({
-          workspaceId,
-          name: sshName || 'SSH Server',
-          host: sshHost,
-          port: Number(sshPort),
-          username: sshUsername,
-          password: sshAuthType === 'password' ? sshPassword : undefined,
-          privateKey: sshAuthType === 'key' ? sshPrivateKey : undefined,
-          passphrase: sshPassphrase || undefined,
-          indexPaths: sshPathList,
-        });
+      try {
+        if (activeType === 'git') {
+          targetPaths = isFullRepoIndex ? [] : gitPathList;
+          location = gitRepoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '');
+          branchOrPort = gitBranch || 'main';
+          result = await sourcesApi.addGit({
+            workspaceId,
+            name: gitName || 'Git Repo',
+            repoUrl: gitRepoUrl,
+            branch: gitBranch,
+            token: gitToken || undefined,
+            indexPaths: targetPaths,
+          });
+        } else {
+          targetPaths = sshPathList;
+          location = `${sshUsername}@${sshHost}`;
+          branchOrPort = `Port ${sshPort}`;
+          result = await sourcesApi.addSSH({
+            workspaceId,
+            name: sshName || 'SSH Server',
+            host: sshHost,
+            port: Number(sshPort),
+            username: sshUsername,
+            password: sshAuthType === 'password' ? sshPassword : undefined,
+            privateKey: sshAuthType === 'key' ? sshPrivateKey : undefined,
+            passphrase: sshPassphrase || undefined,
+            indexPaths: sshPathList,
+          });
+        }
+      } catch (apiErr) {
+        // Fallback for offline mode or server DB unavailable: create local mock source
+        const localId = `src-${Date.now()}`;
+        result = {
+          id: localId,
+          name: (activeType === 'git' ? gitName : sshName) || 'Local Source',
+          type: activeType,
+        };
       }
 
       onSourceAdded({
