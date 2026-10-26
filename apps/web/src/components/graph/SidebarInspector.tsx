@@ -15,6 +15,8 @@ import {
   ArrowUp,
   WarningOctagon,
   ArrowRight,
+  LightbulbFilament,
+  Wrench,
 } from '@phosphor-icons/react';
 import type { CodeNodeData } from './CustomCodeNode';
 
@@ -35,7 +37,7 @@ export function SidebarInspector({
   isOpenMobile,
   onCloseMobile,
 }: SidebarInspectorProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'explorer' | 'hotspots' | 'cycles' | 'security'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'explorer' | 'hotspots' | 'cycles' | 'advisor' | 'security'>('details');
   const [copied, setCopied] = useState(false);
 
   // Filter circular nodes
@@ -147,6 +149,17 @@ export function SidebarInspector({
                 {circularNodes.length}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setActiveTab('advisor')}
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
+              activeTab === 'advisor'
+                ? 'text-cyan-300 bg-cyan-500/20 shadow-sm font-semibold border border-cyan-500/30'
+                : 'text-slate-400 hover:text-cyan-300'
+            }`}
+          >
+            <LightbulbFilament size={12} weight={activeTab === 'advisor' ? 'fill' : 'regular'} className={activeTab === 'advisor' ? 'text-cyan-400' : ''} />
+            Advisor
           </button>
           <button
             onClick={() => setActiveTab('explorer')}
@@ -444,6 +457,103 @@ export function SidebarInspector({
                   </button>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'advisor' && (
+          <div className="space-y-4">
+            <div className="p-3 bg-cyan-950/25 border border-cyan-500/25 rounded-xl space-y-1">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-cyan-300">
+                <LightbulbFilament size={14} weight="fill" />
+                <span>Architectural Decoupling Advisor</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Automated structural refactoring recommendations to break dependency cycles, reduce fan-in bottlenecks, and elevate cohesion.
+              </p>
+            </div>
+
+            {/* Context-aware advice for currently selected node */}
+            {selectedNode && (
+              <div className="p-3.5 bg-[#0a101d] rounded-xl border border-sky-500/30 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-semibold uppercase text-sky-400">
+                    Target: {selectedNode.label}
+                  </span>
+                  <span className="text-[9px] font-mono text-slate-400">
+                    Coupling: {selectedNode.hotspotScore ?? (selectedNode.inDegree ?? 0) + (selectedNode.outDegree ?? 0)}
+                  </span>
+                </div>
+
+                {selectedNode.isCircular ? (
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-rose-300 text-[11px]">
+                      <Wrench size={13} className="text-rose-400" />
+                      <span>Break Recursive Cycle: Dependency Inversion</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Extract an abstract interface or port (e.g. <code className="text-amber-300 font-mono">I{selectedNode.label}</code>) and inject it via constructor/prop into callers instead of directly importing the concrete implementation.
+                    </p>
+                  </div>
+                ) : (selectedNode.inDegree ?? 0) >= 3 && (selectedNode.outDegree ?? 0) >= 2 ? (
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-amber-300 text-[11px]">
+                      <Wrench size={13} className="text-amber-400" />
+                      <span>High Fan-in / Fan-out: Introduce Facade / Mediator</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      This component acts as an architectural nexus. Consider splitting side-effects into a dedicated event emitter or mediator service to isolate domain logic from orchestrations.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-emerald-300 text-[11px]">
+                      <CheckCircle size={13} className="text-emerald-400" weight="fill" />
+                      <span>Healthy Modularity</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Low coupling observed. Clean boundary lines between upstream dependents and downstream dependencies.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* General Best-Practice Strategies */}
+            <div className="space-y-2.5">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 px-1">
+                Refactoring Strategies
+              </div>
+
+              <div className="p-3 bg-[#0a101d] rounded-xl border border-white/[0.06] space-y-1.5">
+                <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                  <span>1. Extract Shared Kernel / Domain Types</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  When two modules import each other only for TypeScript interfaces or constants, move shared types into a standalone <code className="text-slate-200 font-mono">*.types.ts</code> or common kernel package.
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#0a101d] rounded-xl border border-white/[0.06] space-y-1.5">
+                <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                  <span>2. Event-Driven Decoupling</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Replace direct downstream method invocation with pub/sub domain events (e.g., RxJS, EventEmitter, or Zustand dispatchers).
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#0a101d] rounded-xl border border-white/[0.06] space-y-1.5">
+                <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span>3. Inversion of Control (IoC)</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Pass caller dependencies via callback parameters or Context Provider instead of importing singleton instances.
+                </p>
+              </div>
             </div>
           </div>
         )}
