@@ -105,7 +105,7 @@ function WorkspaceContainer({
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [nodes, setNodes] = useState<Node[]>(INITIAL_WORKSPACE_NODES as unknown as Node[]);
   const [edges, setEdges] = useState<Edge[]>(INITIAL_WORKSPACE_EDGES);
-  const [selectedNodeId, setSelectedNodeId] = useState<string>(INITIAL_WORKSPACE_NODES[0].id);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(INITIAL_WORKSPACE_NODES[0].id);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -505,6 +505,92 @@ function WorkspaceContainer({
       return matchesKind && matchesSource && matchesHotspot && matchesSearch;
     });
   }, [enrichedNodes, selectedKind, selectedSource, showOnlyHotspots, searchQuery]);
+
+  // Compute blast radius: sets of upstream callers and downstream callees when a node is selected
+  const blastRadius = useMemo(() => {
+    if (!selectedNodeId) {
+      return {
+        upstreamNodeIds: new Set<string>(),
+        downstreamNodeIds: new Set<string>(),
+        activeEdgeIds: new Set<string>(),
+      };
+    }
+
+    const upstreamNodeIds = new Set<string>();
+    const downstreamNodeIds = new Set<string>();
+    const activeEdgeIds = new Set<string>();
+
+    edges.forEach((edge) => {
+      if (edge.target === selectedNodeId) {
+        upstreamNodeIds.add(edge.source);
+        activeEdgeIds.add(edge.id);
+      }
+      if (edge.source === selectedNodeId) {
+        downstreamNodeIds.add(edge.target);
+        activeEdgeIds.add(edge.id);
+      }
+    });
+
+    return { upstreamNodeIds, downstreamNodeIds, activeEdgeIds };
+  }, [selectedNodeId, edges]);
+
+  // Enriched filtered nodes with blast radius role and dimming attributes
+  const displayNodes = useMemo(() => {
+    if (!selectedNodeId) return filteredNodes;
+
+    return filteredNodes.map((node) => {
+      const isTarget = node.id === selectedNodeId;
+      const isUpstream = blastRadius.upstreamNodeIds.has(node.id);
+      const isDownstream = blastRadius.downstreamNodeIds.has(node.id);
+      const isPartOfBlast = isTarget || isUpstream || isDownstream;
+
+      const blastRole = isTarget ? 'target' : isUpstream ? 'upstream' : isDownstream ? 'downstream' : undefined;
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          isDimmed: !isPartOfBlast,
+          isBlastRadius: isPartOfBlast,
+          blastRole,
+        },
+      };
+    });
+  }, [filteredNodes, selectedNodeId, blastRadius]);
+
+  // Enriched edges with animated glowing style for blast radius connections
+  const displayEdges = useMemo(() => {
+    if (!selectedNodeId) return edges;
+
+    return edges.map((edge) => {
+      const isConnected = blastRadius.activeEdgeIds.has(edge.id);
+      const isOutgoing = edge.source === selectedNodeId;
+
+      if (isConnected) {
+        return {
+          ...edge,
+          animated: true,
+          style: {
+            ...edge.style,
+            stroke: isOutgoing ? '#818cf8' : '#34d399',
+            strokeWidth: 2.5,
+            opacity: 1,
+          },
+        };
+      }
+
+      return {
+        ...edge,
+        animated: false,
+        style: {
+          ...edge.style,
+          stroke: '#334155',
+          strokeWidth: 1,
+          opacity: 0.15,
+        },
+      };
+    });
+  }, [edges, selectedNodeId, blastRadius]);
 
   const allNodeDataList = useMemo(() => {
     return nodes.map((n) => n.data as unknown as CodeNodeData);
@@ -1115,11 +1201,12 @@ graph TD
               />
 
               <ReactFlow
-                nodes={filteredNodes}
-                edges={edges}
+                nodes={displayNodes}
+                edges={displayEdges}
                 nodeTypes={nodeTypes}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
+                onPaneClick={() => setSelectedNodeId(null)}
                 onNodeClick={(_, node) => {
                   setSelectedNodeId(node.id);
                   focusNodeOnCanvas(node.id);

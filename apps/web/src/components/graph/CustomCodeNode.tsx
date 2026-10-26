@@ -28,6 +28,9 @@ export interface CodeNodeData {
   inDegree?: number;
   outDegree?: number;
   hotspotScore?: number;
+  isDimmed?: boolean;
+  isBlastRadius?: boolean;
+  blastRole?: 'target' | 'upstream' | 'downstream';
   [key: string]: unknown;
 }
 
@@ -82,19 +85,40 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
   const nodeData = data as unknown as CodeNodeData;
   const config = KIND_CONFIG[nodeData.kind] || KIND_CONFIG.service;
   const isHot = nodeData.hotspotScore !== undefined && nodeData.hotspotScore >= 4;
+  const isDimmed = nodeData.isDimmed && !selected;
+  const blastRole = nodeData.blastRole;
 
   return (
     <div
-      className={`relative w-[260px] rounded-xl transition-all duration-200 text-left select-none group cursor-pointer ${
-        selected
-          ? 'ring-1 ring-sky-400/80 shadow-[0_0_24px_rgba(56,189,248,0.22)] bg-[#0c1424]'
+      className={`relative w-[260px] rounded-xl transition-all duration-300 text-left select-none group cursor-pointer ${
+        isDimmed
+          ? 'opacity-25 grayscale hover:grayscale-0 hover:opacity-100 border border-white/[0.04] bg-[#080d16]/60'
+          : selected
+          ? 'ring-2 ring-sky-400 shadow-[0_0_30px_rgba(56,189,248,0.35)] bg-[#0c1424] border-transparent'
+          : blastRole === 'upstream'
+          ? 'ring-1 ring-emerald-400/80 shadow-[0_0_20px_rgba(52,211,153,0.25)] border-emerald-500/50 bg-[#08151a]'
+          : blastRole === 'downstream'
+          ? 'ring-1 ring-indigo-400/80 shadow-[0_0_20px_rgba(129,140,248,0.25)] border-indigo-500/50 bg-[#0f1124]'
           : isHot
           ? 'border border-amber-500/40 hover:border-amber-500/70 bg-[#0a0f1d]/95 hover:bg-[#0d1426] shadow-[0_0_15px_rgba(245,158,11,0.12)]'
           : 'border border-white/[0.08] hover:border-white/20 bg-[#080d16]/95 hover:bg-[#0b121f] shadow-lg shadow-black/40'
       }`}
     >
-      {/* Animated Subtle Pulse Ring for HOT nodes when not manually selected */}
-      {isHot && !selected && (
+      {/* Blast role badge banner */}
+      {blastRole && blastRole !== 'target' && (
+        <div className="absolute -top-2.5 right-3 z-10">
+          <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-full font-bold shadow-md border ${
+            blastRole === 'upstream'
+              ? 'bg-emerald-950 text-emerald-300 border-emerald-500/40'
+              : 'bg-indigo-950 text-indigo-300 border-indigo-500/40'
+          }`}>
+            {blastRole === 'upstream' ? '↑ CALLER' : '↓ CALLEE'}
+          </span>
+        </div>
+      )}
+
+      {/* Animated Subtle Pulse Ring for HOT nodes when not manually selected and not dimmed */}
+      {isHot && !selected && !isDimmed && (
         <div className="absolute -inset-[1px] rounded-xl border border-amber-500/30 animate-pulse pointer-events-none" />
       )}
       {/* Top connection handle */}
