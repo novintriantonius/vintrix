@@ -65,6 +65,35 @@ export const workspacesRouter = new Elysia({ prefix: '/workspaces' })
     ownedWorkspaces.forEach((w) => map.set(w.id, w));
     memberWorkspaces.forEach((w) => map.set(w.id, w));
 
+    // If user has no workspaces yet, auto-provision their default personal workspace
+    if (map.size === 0) {
+      try {
+        const defaultName = currentUser.name ? `${currentUser.name.split(' ')[0]}'s Workspace` : 'My Workspace';
+        const [newWs] = await db
+          .insert(workspaces)
+          .values({
+            name: defaultName,
+            description: 'Personal codebase intelligence workspace',
+            ownerId: currentUser.id,
+          })
+          .returning();
+
+        if (newWs) {
+          map.set(newWs.id, newWs);
+          const [ownerRole] = await db.select().from(roles).where(eq(roles.name, DEFAULT_ROLE_NAME));
+          if (ownerRole) {
+            await db.insert(workspaceMembers).values({
+              workspaceId: newWs.id,
+              userId: currentUser.id,
+              roleId: ownerRole.id,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[Workspaces GET] Auto-provision workspace failed:', err);
+      }
+    }
+
     return Array.from(map.values());
   })
   .post(

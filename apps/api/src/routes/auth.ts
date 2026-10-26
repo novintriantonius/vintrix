@@ -123,6 +123,27 @@ export const authRouter = new Elysia({ prefix: '/auth' })
               .returning();
             if (inserted.length > 0) {
               userId = inserted[0].id;
+
+              // Create default personal workspace for new Google OAuth user
+              const insertedWorkspace = await db
+                .insert(workspaces)
+                .values({
+                  name: `${displayName.split(' ')[0]}'s Workspace`,
+                  description: 'Personal codebase intelligence workspace',
+                  ownerId: userId,
+                })
+                .returning();
+
+              if (insertedWorkspace.length > 0) {
+                const defaultRoles = await db.select().from(roles).where(eq(roles.name, 'owner')).limit(1);
+                if (defaultRoles.length > 0) {
+                  await db.insert(workspaceMembers).values({
+                    workspaceId: insertedWorkspace[0].id,
+                    userId,
+                    roleId: defaultRoles[0].id,
+                  });
+                }
+              }
             }
           }
         } catch (dbErr) {

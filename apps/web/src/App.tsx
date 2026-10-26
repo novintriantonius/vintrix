@@ -23,7 +23,6 @@ import {
   Footer,
 } from './components/landing/Sections';
 import { CustomCodeNode, type CodeNodeData, type NodeKind } from './components/graph/CustomCodeNode';
-import { INITIAL_WORKSPACE_NODES, INITIAL_WORKSPACE_EDGES } from './components/graph/mockData';
 import { GraphToolbar } from './components/graph/GraphToolbar';
 import { getLayoutedNodes, findShortestPath, type LayoutDirection } from './components/graph/layout';
 import { SidebarInspector } from './components/graph/SidebarInspector';
@@ -98,16 +97,18 @@ function WorkspaceContainer({
   onLogout: () => void;
 }) {
   const [workspaceTab, setWorkspaceTab] = useState<'graph' | 'chat'>('graph');
-  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(DEFAULT_WORKSPACE_ID);
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(() => {
+    return localStorage.getItem('vintrix_active_workspace') || '';
+  });
   const [workspacesList, setWorkspacesList] = useState<Workspace[]>([]);
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [newWorkspaceDesc, setNewWorkspaceDesc] = useState('');
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
-  const [nodes, setNodes] = useState<Node[]>(INITIAL_WORKSPACE_NODES as unknown as Node[]);
-  const [edges, setEdges] = useState<Edge[]>(INITIAL_WORKSPACE_EDGES);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(INITIAL_WORKSPACE_NODES[0].id);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -164,18 +165,44 @@ function WorkspaceContainer({
       .then((data) => {
         if (data && data.length > 0) {
           setWorkspacesList(data);
+          // If current selection is not valid or empty, switch to the first legitimate workspace
           if (!data.some((w) => w.id === currentWorkspaceId)) {
             setCurrentWorkspaceId(data[0].id);
+            localStorage.setItem('vintrix_active_workspace', data[0].id);
           }
         } else {
-          setWorkspacesList([]);
+          // If user has zero workspaces, auto-create their personal default workspace
+          const defaultWsName = user?.displayName ? `${user.displayName.split(' ')[0]}'s Workspace` : 'My Workspace';
+          const localWs: Workspace = {
+            id: `ws-${Date.now()}`,
+            name: defaultWsName,
+            description: 'Personal codebase intelligence workspace',
+            ownerId: user?.id || 'user-default',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          setWorkspacesList([localWs]);
+          setCurrentWorkspaceId(localWs.id);
+          localStorage.setItem('vintrix_active_workspace', localWs.id);
         }
       })
       .catch((err) => {
         console.warn('[Workspaces List] Failed to fetch member workspaces:', err);
-        setWorkspacesList([]);
+        // Fallback auto-provision
+        const defaultWsName = user?.displayName ? `${user.displayName.split(' ')[0]}'s Workspace` : 'My Workspace';
+        const localWs: Workspace = {
+          id: `ws-${Date.now()}`,
+          name: defaultWsName,
+          description: 'Personal codebase intelligence workspace',
+          ownerId: user?.id || 'user-default',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setWorkspacesList([localWs]);
+        setCurrentWorkspaceId(localWs.id);
+        localStorage.setItem('vintrix_active_workspace', localWs.id);
       });
-  }, [user, currentWorkspaceId]);
+  }, [user]);
 
   // Load sources, members, and graph whenever active workspace changes
   useEffect(() => {
@@ -212,6 +239,12 @@ function WorkspaceContainer({
         ]);
       });
 
+    if (!currentWorkspaceId) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+
     graphApi
       .getWorkspaceGraph<CodeNodeData>(currentWorkspaceId)
       .then((res) => {
@@ -219,15 +252,17 @@ function WorkspaceContainer({
           setNodes(res.nodes as unknown as Node[]);
           if (res.edges && res.edges.length > 0) {
             setEdges(res.edges as unknown as Edge[]);
+          } else {
+            setEdges([]);
           }
         } else {
-          setNodes(INITIAL_WORKSPACE_NODES as unknown as Node[]);
-          setEdges(INITIAL_WORKSPACE_EDGES);
+          setNodes([]);
+          setEdges([]);
         }
       })
       .catch(() => {
-        setNodes(INITIAL_WORKSPACE_NODES as unknown as Node[]);
-        setEdges(INITIAL_WORKSPACE_EDGES);
+        setNodes([]);
+        setEdges([]);
       });
 
     // Subscribe to live Server-Sent Events (SSE) for background re-indexing & Git webhooks
@@ -280,6 +315,7 @@ function WorkspaceContainer({
       });
       setWorkspacesList((prev) => [created, ...prev]);
       setCurrentWorkspaceId(created.id);
+      localStorage.setItem('vintrix_active_workspace', created.id);
       setIsCreateWorkspaceOpen(false);
       setNewWorkspaceName('');
       setNewWorkspaceDesc('');
@@ -289,7 +325,7 @@ function WorkspaceContainer({
         description: `Switched to newly created workspace "${created.name}".`,
       });
     } catch {
-      // Offline fallback
+      // Instant Local storage fallback if server DB is unreachable
       const localWorkspace: Workspace = {
         id: `ws-${Date.now()}`,
         name: newWorkspaceName.trim(),
@@ -300,12 +336,13 @@ function WorkspaceContainer({
       };
       setWorkspacesList((prev) => [localWorkspace, ...prev]);
       setCurrentWorkspaceId(localWorkspace.id);
+      localStorage.setItem('vintrix_active_workspace', localWorkspace.id);
       setIsCreateWorkspaceOpen(false);
       setNewWorkspaceName('');
       setNewWorkspaceDesc('');
       addToast({
         type: 'success',
-        title: 'Workspace Created',
+        title: 'Workspace Created (Local)',
         description: `Switched to workspace "${localWorkspace.name}".`,
       });
     } finally {
@@ -1278,7 +1315,7 @@ graph TD
               title="Switch Workspace"
             >
               <span className="truncate">
-                {workspacesList.find((w) => w.id === currentWorkspaceId)?.name || 'vintrix-monorepo'}
+                {workspacesList.find((w) => w.id === currentWorkspaceId)?.name || (workspacesList[0]?.name ?? 'Select Workspace')}
               </span>
               <ChevronDown size={11} className="shrink-0 text-slate-400" />
             </button>
@@ -1288,28 +1325,35 @@ graph TD
                 <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                   Workspaces
                 </div>
-                {workspacesList.map((ws) => (
-                  <button
-                    key={ws.id}
-                    onClick={() => {
-                      setCurrentWorkspaceId(ws.id);
-                      setIsWorkspaceDropdownOpen(false);
-                      addToast({
-                        type: 'info',
-                        title: 'Workspace Switched',
-                        description: `Active workspace changed to "${ws.name}".`,
-                      });
-                    }}
-                    className={`w-full text-left px-3 py-1.5 text-xs font-mono transition-colors flex items-center justify-between ${
-                      ws.id === currentWorkspaceId
-                        ? 'text-sky-300 bg-sky-500/10 font-medium'
-                        : 'text-slate-300 hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    <span className="truncate">{ws.name}</span>
-                    {ws.id === currentWorkspaceId && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
-                  </button>
-                ))}
+                {workspacesList.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-slate-400 italic font-sans">
+                    No workspaces found
+                  </div>
+                ) : (
+                  workspacesList.map((ws) => (
+                    <button
+                      key={ws.id}
+                      onClick={() => {
+                        setCurrentWorkspaceId(ws.id);
+                        localStorage.setItem('vintrix_active_workspace', ws.id);
+                        setIsWorkspaceDropdownOpen(false);
+                        addToast({
+                          type: 'info',
+                          title: 'Workspace Switched',
+                          description: `Active workspace changed to "${ws.name}".`,
+                        });
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-xs font-mono transition-colors flex items-center justify-between ${
+                        ws.id === currentWorkspaceId
+                          ? 'text-sky-300 bg-sky-500/10 font-medium'
+                          : 'text-slate-300 hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <span className="truncate">{ws.name}</span>
+                      {ws.id === currentWorkspaceId && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
+                    </button>
+                  ))
+                )}
                 <div className="border-t border-white/[0.08] my-1" />
                 <button
                   onClick={() => {
@@ -1599,6 +1643,29 @@ graph TD
                 <Controls className="!bg-[#0b1320] !border-[#16243b] !rounded-xl overflow-hidden [&>button]:!bg-[#0b1320] [&>button]:!border-[#16243b] [&>button]:!fill-slate-300 hover:[&>button]:!bg-slate-800" />
               </ReactFlow>
 
+              {/* Empty Workspace State Prompt */}
+              {displayNodes.length === 0 && (
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                  <div className="pointer-events-auto max-w-md mx-auto text-center p-6 rounded-2xl bg-[#090e17]/80 backdrop-blur-md border border-white/10 shadow-2xl">
+                    <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-3">
+                      <Layers size={22} />
+                    </div>
+                    <h3 className="text-sm font-semibold text-slate-100 mb-1">Workspace Belum Memiliki Source Code</h3>
+                    <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                      Tambahkan repository Git atau server SSH Anda untuk mulai mengindeks AST arsitektur dan melihat graf dependensi.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddSourceOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-medium text-xs transition-colors shadow-lg shadow-sky-500/20"
+                    >
+                      <Plus size={14} />
+                      <span>Add Code Source</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Floating Multi-Hop Blast Radius Depth Controller */}
               {selectedNodeId && (
                 <div className="absolute top-16 left-6 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0b1320]/90 backdrop-blur-md border border-white/10 shadow-xl text-xs font-mono">
@@ -1880,8 +1947,6 @@ graph TD
 }
 
 export default function App() {
-  const [view, setView] = useState<'landing' | 'app'>('landing');
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     try {
       const stored = localStorage.getItem('vintrix_user');
@@ -1891,18 +1956,38 @@ export default function App() {
     }
   });
 
+  const getPath = () => window.location.pathname;
+  const [currentPath, setCurrentPath] = useState<string>(getPath);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Sync route path on popstate (browser back/forward)
+  useEffect(() => {
+    const handlePopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (path: string) => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+      setCurrentPath(path);
+    }
+  };
+
   const handleAuthSuccess = (user: AuthUser, token: string) => {
     localStorage.setItem('vintrix_token', token);
     localStorage.setItem('vintrix_user', JSON.stringify(user));
     setCurrentUser(user);
     setIsAuthModalOpen(false);
+    navigate('/dashboard');
   };
 
   const handleLogout = () => {
     localStorage.removeItem('vintrix_token');
     localStorage.removeItem('vintrix_user');
+    localStorage.removeItem('vintrix_active_workspace');
     setCurrentUser(null);
-    setView('landing');
+    navigate('/');
   };
 
   const handleOpenApp = () => {
@@ -1910,7 +1995,7 @@ export default function App() {
       setIsAuthModalOpen(true);
       return;
     }
-    setView('app');
+    navigate('/dashboard');
   };
 
   // Validate session token on mount with /auth/me, or catch OAuth URL query callback params
@@ -1926,11 +2011,10 @@ export default function App() {
         localStorage.setItem('vintrix_token', oauthToken);
         localStorage.setItem('vintrix_user', JSON.stringify(parsedUser));
         setCurrentUser(parsedUser);
-        setView('app');
 
-        // Clean query params from browser URL bar without reload
-        const cleanUrl = window.location.origin + window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
+        // Redirect directly to /dashboard and clean URL params
+        window.history.replaceState({}, document.title, '/dashboard');
+        setCurrentPath('/dashboard');
         return;
       } catch {
         // pass
@@ -1956,22 +2040,22 @@ export default function App() {
     }
   }, []);
 
-  // Force redirection to landing if session is lost while on dashboard
+  const isDashboardRoute = currentPath.startsWith('/dashboard') || currentPath.startsWith('/app');
+
+  // Guard: if user is on dashboard route without authenticated session, redirect to landing & prompt auth
   useEffect(() => {
-    if (view === 'app' && !currentUser) {
-      setView('landing');
+    if (isDashboardRoute && !currentUser) {
+      navigate('/');
       setIsAuthModalOpen(true);
     }
-  }, [view, currentUser]);
+  }, [isDashboardRoute, currentUser]);
 
-  if (view === 'landing' || !currentUser) {
+  if (!isDashboardRoute || !currentUser) {
     return (
       <div className="min-h-screen bg-[#050a10] text-[#f8fafc] selection:bg-brand-500/20 selection:text-brand-300">
         <Nav
           onOpenApp={handleOpenApp}
           onOpenAuth={() => setIsAuthModalOpen(true)}
-          user={currentUser}
-          onLogout={handleLogout}
         />
         <main>
           <Hero onOpenApp={handleOpenApp} />
@@ -1994,7 +2078,7 @@ export default function App() {
   return (
     <ReactFlowProvider>
       <WorkspaceContainer
-        onBackToLanding={() => setView('landing')}
+        onBackToLanding={() => navigate('/')}
         user={currentUser}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}

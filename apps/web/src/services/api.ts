@@ -12,15 +12,27 @@ async function request<T>(
   const token = localStorage.getItem('vintrix_token');
   const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...authHeaders, ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error((err as { message?: string }).message ?? res.statusText);
+  // Setup 8s timeout to prevent UI hanging indefinitely on slow DB connections
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...authHeaders, ...options?.headers },
+      signal: options?.signal || controller.signal,
+      ...options,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error((err as { message?: string }).message ?? res.statusText);
+    }
+    return res.json() as Promise<T>;
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    throw err;
   }
-  return res.json() as Promise<T>;
 }
 
 // ─── Workspace Types ──────────────────────────────────────────────────────────

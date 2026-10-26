@@ -1,15 +1,12 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { ArrowRight, GitBranch, Graph, SignOut } from '@phosphor-icons/react';
-import type { AuthUser } from '../../services/api';
+import { ArrowRight, GitBranch, Graph } from '@phosphor-icons/react';
 
 interface NavProps {
   onOpenApp?: () => void;
   onOpenAuth?: () => void;
-  user?: AuthUser | null;
-  onLogout?: () => void;
 }
 
-export function Nav({ onOpenApp, onOpenAuth, user, onLogout }: NavProps) {
+export function Nav({ onOpenApp, onOpenAuth }: NavProps) {
   const reduce = useReducedMotion();
   return (
     <motion.header
@@ -29,32 +26,13 @@ export function Nav({ onOpenApp, onOpenAuth, user, onLogout }: NavProps) {
           <a href="#open-source" className="hover:text-slate-200 transition-colors duration-150">Open Source</a>
         </nav>
         <div className="flex items-center gap-3">
-          {user ? (
-            <div className="flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] px-2.5 py-1 rounded-lg">
-              <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-sky-400 to-indigo-500 text-[10px] font-bold text-slate-950 flex items-center justify-center shrink-0">
-                {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
-              </div>
-              <span className="text-xs text-slate-200 max-w-[100px] truncate">{user.displayName || user.email}</span>
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  title="Sign out"
-                  className="text-slate-400 hover:text-rose-400 transition-colors ml-1"
-                >
-                  <SignOut size={13} weight="bold" />
-                </button>
-              )}
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={onOpenAuth || onOpenApp}
-              className="hidden sm:block text-sm text-slate-400 hover:text-slate-200 transition-colors duration-150"
-            >
-              Sign in
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onOpenAuth || onOpenApp}
+            className="hidden sm:block text-sm text-slate-400 hover:text-slate-200 transition-colors duration-150"
+          >
+            Sign in
+          </button>
           <button
             type="button"
             onClick={onOpenApp}
