@@ -28,6 +28,7 @@ import { GraphToolbar } from './components/graph/GraphToolbar';
 import { getLayoutedNodes, findShortestPath, type LayoutDirection } from './components/graph/layout';
 import { SidebarInspector } from './components/graph/SidebarInspector';
 import { SlidingCodeViewer } from './components/graph/SlidingCodeViewer';
+import { HistoryReplayBar, type TimelineSnapshot } from './components/graph/HistoryReplayBar';
 import { ChatboxView } from './components/chat/ChatboxView';
 import { AddSourceModal } from './components/sources/AddSourceModal';
 import {
@@ -120,6 +121,8 @@ function WorkspaceContainer({
   const [isPathFinderActive, setIsPathFinderActive] = useState(false);
   const [pathStartNodeId, setPathStartNodeId] = useState<string>('');
   const [pathTargetNodeId, setPathTargetNodeId] = useState<string>('');
+  const [isHistoryReplayOpen, setIsHistoryReplayOpen] = useState(false);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
@@ -638,8 +641,85 @@ function WorkspaceContainer({
     return findShortestPath(pathStartNodeId, pathTargetNodeId, edges);
   }, [isPathFinderActive, pathStartNodeId, pathTargetNodeId, edges]);
 
-  // Enriched filtered nodes with blast radius role, path finder role, hop level, and dimming attributes
+  // Simulated Git architecture evolution snapshots for History Replay
+  const historySnapshots: TimelineSnapshot[] = useMemo(() => {
+    if (nodes.length === 0) return [];
+
+    const step1Nodes = nodes.slice(0, Math.max(2, Math.floor(nodes.length * 0.35))).map((n) => n.id);
+    const step2Nodes = nodes.slice(0, Math.max(3, Math.floor(nodes.length * 0.65))).map((n) => n.id);
+    const step3Nodes = nodes.slice(0, Math.max(4, Math.floor(nodes.length * 0.85))).map((n) => n.id);
+    const step4Nodes = nodes.map((n) => n.id);
+
+    const getActiveEdges = (activeIds: string[]) => {
+      const set = new Set(activeIds);
+      return edges.filter((e) => set.has(e.source) && set.has(e.target)).map((e) => e.id);
+    };
+
+    return [
+      {
+        id: 'snap-1',
+        commitHash: 'a1b2c3d',
+        commitMessage: 'feat(core): initial repository scaffolding & database entities',
+        author: 'Alex Mercer',
+        timestamp: '2 weeks ago',
+        activeNodeIds: step1Nodes,
+        activeEdgeIds: getActiveEdges(step1Nodes),
+        changedNodeId: step1Nodes[0],
+      },
+      {
+        id: 'snap-2',
+        commitHash: 'e4f5a6b',
+        commitMessage: 'feat(services): implement business logic & auth token service',
+        author: 'Sarah Connor',
+        timestamp: '1 week ago',
+        activeNodeIds: step2Nodes,
+        activeEdgeIds: getActiveEdges(step2Nodes),
+        changedNodeId: step2Nodes[step2Nodes.length - 1],
+      },
+      {
+        id: 'snap-3',
+        commitHash: '9c8b7a6',
+        commitMessage: 'feat(api): expose API gateway endpoints and security filters',
+        author: 'Novin Triantonius',
+        timestamp: '3 days ago',
+        activeNodeIds: step3Nodes,
+        activeEdgeIds: getActiveEdges(step3Nodes),
+        changedNodeId: step3Nodes[step3Nodes.length - 1],
+      },
+      {
+        id: 'snap-4',
+        commitHash: 'd3e2f1a',
+        commitMessage: 'refactor(arch): optimize dependency injection and cycle isolation',
+        author: 'Novin Triantonius',
+        timestamp: 'Just now',
+        activeNodeIds: step4Nodes,
+        activeEdgeIds: getActiveEdges(step4Nodes),
+        changedNodeId: step4Nodes[step4Nodes.length - 1],
+      },
+    ];
+  }, [nodes, edges]);
+
+  // Enriched filtered nodes with blast radius role, path finder role, history replay, and dimming
   const displayNodes = useMemo(() => {
+    // If History Replay is active, constrain nodes to the active snapshot
+    if (isHistoryReplayOpen && historySnapshots.length > 0) {
+      const currentSnap = historySnapshots[historyIndex] || historySnapshots[0];
+      const activeSet = new Set(currentSnap.activeNodeIds);
+      return filteredNodes.map((node) => {
+        const isActive = activeSet.has(node.id);
+        const isLatestAdded = node.id === currentSnap.changedNodeId;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            isDimmed: !isActive,
+            isBlastRadius: isActive,
+            blastRole: isLatestAdded ? 'target' : isActive ? 'downstream' : undefined,
+          },
+        };
+      });
+    }
+
     if (isPathFinderActive && pathStartNodeId && pathTargetNodeId) {
       const pathNodeSet = new Set(activePath ? activePath.nodeIds : [pathStartNodeId, pathTargetNodeId]);
       return filteredNodes.map((node) => {
@@ -693,6 +773,36 @@ function WorkspaceContainer({
 
   // Enriched edges with animated glowing style for blast radius connections and circular warnings
   const displayEdges = useMemo(() => {
+    // History Replay edge filtering
+    if (isHistoryReplayOpen && historySnapshots.length > 0) {
+      const currentSnap = historySnapshots[historyIndex] || historySnapshots[0];
+      const activeEdgeSet = new Set(currentSnap.activeEdgeIds);
+      return edges.map((edge) => {
+        const isActive = activeEdgeSet.has(edge.id);
+        if (isActive) {
+          return {
+            ...edge,
+            animated: true,
+            style: {
+              ...edge.style,
+              stroke: '#38bdf8',
+              strokeWidth: 2,
+              opacity: 0.95,
+            },
+          };
+        }
+        return {
+          ...edge,
+          animated: false,
+          style: {
+            ...edge.style,
+            stroke: '#1e293b',
+            strokeWidth: 1,
+            opacity: 0.08,
+          },
+        };
+      });
+    }
     // Identify edges that form part of a detected circular cycle
     const circularEdgeSet = new Set<string>();
     enrichedNodes.forEach((node) => {
@@ -793,7 +903,7 @@ function WorkspaceContainer({
 
       return edge;
     });
-  }, [edges, selectedNodeId, blastRadius, enrichedNodes, showOnlyCycles, filteredNodes, isPathFinderActive, pathStartNodeId, pathTargetNodeId, activePath]);
+  }, [edges, selectedNodeId, blastRadius, enrichedNodes, showOnlyCycles, filteredNodes, isPathFinderActive, pathStartNodeId, pathTargetNodeId, activePath, isHistoryReplayOpen, historySnapshots, historyIndex]);
 
   const allNodeDataList = useMemo(() => {
     return enrichedNodes.map((n) => ({
@@ -1472,6 +1582,8 @@ graph TD
                     return next;
                   });
                 }}
+                isHistoryReplayOpen={isHistoryReplayOpen}
+                onToggleHistoryReplay={() => setIsHistoryReplayOpen((prev) => !prev)}
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}
@@ -1605,6 +1717,15 @@ graph TD
                   </button>
                 </div>
               )}
+
+              {/* Architecture History Replay Timeline Bar */}
+              <HistoryReplayBar
+                isOpen={isHistoryReplayOpen}
+                onClose={() => setIsHistoryReplayOpen(false)}
+                snapshots={historySnapshots}
+                currentIndex={historyIndex}
+                onSelectIndex={setHistoryIndex}
+              />
 
               {/* Bottom Sliding Code Viewer Drawer */}
               <SlidingCodeViewer

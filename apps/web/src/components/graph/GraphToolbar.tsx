@@ -15,6 +15,7 @@ import {
   WarningOctagon,
   TreeStructure,
   NavigationArrow,
+  ClockCounterClockwise,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
 import type { LayoutDirection } from './layout';
@@ -36,6 +37,8 @@ interface GraphToolbarProps {
   onSelectLayout?: (direction: LayoutDirection) => void;
   isPathFinderActive?: boolean;
   onTogglePathFinder?: () => void;
+  isHistoryReplayOpen?: boolean;
+  onToggleHistoryReplay?: () => void;
   nodeCount: number;
   totalNodes: number;
   onResetView: () => void;
@@ -69,6 +72,8 @@ export function GraphToolbar({
   onSelectLayout,
   isPathFinderActive = false,
   onTogglePathFinder,
+  isHistoryReplayOpen = false,
+  onToggleHistoryReplay,
   nodeCount,
   totalNodes,
   onResetView,
@@ -263,6 +268,23 @@ export function GraphToolbar({
           >
             <NavigationArrow size={12} weight={isPathFinderActive ? 'fill' : 'regular'} className={isPathFinderActive ? 'text-emerald-400' : 'text-slate-400'} />
             <span className="hidden sm:inline">Route</span>
+          </button>
+        )}
+
+        {/* History Replay Toggle */}
+        {onToggleHistoryReplay && (
+          <button
+            type="button"
+            onClick={onToggleHistoryReplay}
+            title={isHistoryReplayOpen ? 'Close Architecture History Replay' : 'Open Architecture History Replay'}
+            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+              isHistoryReplayOpen
+                ? 'bg-sky-500/25 text-sky-300 border border-sky-500/50 font-semibold shadow-sm'
+                : 'text-slate-400 hover:text-sky-300 hover:bg-white/[0.04]'
+            }`}
+          >
+            <ClockCounterClockwise size={12} weight={isHistoryReplayOpen ? 'bold' : 'regular'} className={isHistoryReplayOpen ? 'text-sky-400' : 'text-slate-400'} />
+            <span className="hidden sm:inline">Replay</span>
           </button>
         )}
       </div>
