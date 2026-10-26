@@ -81,15 +81,22 @@ const KIND_CONFIG: Record<
 export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
   const nodeData = data as unknown as CodeNodeData;
   const config = KIND_CONFIG[nodeData.kind] || KIND_CONFIG.service;
+  const isHot = nodeData.hotspotScore !== undefined && nodeData.hotspotScore >= 4;
 
   return (
     <div
       className={`relative w-[260px] rounded-xl transition-all duration-200 text-left select-none group cursor-pointer ${
         selected
           ? 'ring-1 ring-sky-400/80 shadow-[0_0_24px_rgba(56,189,248,0.22)] bg-[#0c1424]'
+          : isHot
+          ? 'border border-amber-500/40 hover:border-amber-500/70 bg-[#0a0f1d]/95 hover:bg-[#0d1426] shadow-[0_0_15px_rgba(245,158,11,0.12)]'
           : 'border border-white/[0.08] hover:border-white/20 bg-[#080d16]/95 hover:bg-[#0b121f] shadow-lg shadow-black/40'
       }`}
     >
+      {/* Animated Subtle Pulse Ring for HOT nodes when not manually selected */}
+      {isHot && !selected && (
+        <div className="absolute -inset-[1px] rounded-xl border border-amber-500/30 animate-pulse pointer-events-none" />
+      )}
       {/* Top connection handle */}
       <Handle
         type="target"
