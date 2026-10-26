@@ -452,7 +452,7 @@ function WorkspaceContainer({
     return list;
   }, [sourcesList, nodes]);
 
-  // Compute node in-degree, out-degree, and hotspot scores based on graph edges
+  // Compute node in-degree, out-degree, hotspot scores, and circular dependencies
   const enrichedNodes = useMemo(() => {
     // Map degrees
     const inDegrees: Record<string, number> = {};
@@ -463,6 +463,51 @@ function WorkspaceContainer({
       inDegrees[e.target] = (inDegrees[e.target] || 0) + 1;
     });
 
+    // Circular Dependency Detection via DFS Cycle Search
+    const adj: Record<string, string[]> = {};
+    edges.forEach((e) => {
+      if (!adj[e.source]) adj[e.source] = [];
+      adj[e.source].push(e.target);
+    });
+
+    const circularNodes = new Set<string>();
+    const nodeCycles: Record<string, string[]> = {};
+    const visited = new Set<string>();
+    const recStack = new Set<string>();
+    const path: string[] = [];
+
+    const dfs = (nodeId: string) => {
+      visited.add(nodeId);
+      recStack.add(nodeId);
+      path.push(nodeId);
+
+      const neighbors = adj[nodeId] || [];
+      for (const next of neighbors) {
+        if (!visited.has(next)) {
+          dfs(next);
+        } else if (recStack.has(next)) {
+          // Detected cycle: extract sub-cycle from next to end of path
+          const cycleStartIndex = path.indexOf(next);
+          if (cycleStartIndex !== -1) {
+            const cycleNodes = path.slice(cycleStartIndex).concat(next);
+            cycleNodes.forEach((cn) => {
+              circularNodes.add(cn);
+              nodeCycles[cn] = cycleNodes;
+            });
+          }
+        }
+      }
+
+      path.pop();
+      recStack.delete(nodeId);
+    };
+
+    nodes.forEach((n) => {
+      if (!visited.has(n.id)) {
+        dfs(n.id);
+      }
+    });
+
     return nodes.map((node) => {
       const data = node.data as unknown as CodeNodeData;
       if (!data) return node;
@@ -470,6 +515,8 @@ function WorkspaceContainer({
       const inDegree = inDegrees[node.id] || 0;
       const outDegree = outDegrees[node.id] || 0;
       const hotspotScore = inDegree + outDegree;
+      const isCircular = circularNodes.has(node.id);
+      const circularCycle = nodeCycles[node.id];
 
       return {
         ...node,
@@ -478,6 +525,8 @@ function WorkspaceContainer({
           inDegree,
           outDegree,
           hotspotScore,
+          isCircular,
+          circularCycle,
         },
       };
     });
@@ -558,39 +607,71 @@ function WorkspaceContainer({
     });
   }, [filteredNodes, selectedNodeId, blastRadius]);
 
-  // Enriched edges with animated glowing style for blast radius connections
+  // Enriched edges with animated glowing style for blast radius connections and circular warnings
   const displayEdges = useMemo(() => {
-    if (!selectedNodeId) return edges;
+    // Identify edges that form part of a detected circular cycle
+    const circularEdgeSet = new Set<string>();
+    enrichedNodes.forEach((node) => {
+      const data = node.data as unknown as CodeNodeData;
+      if (data?.isCircular && data?.circularCycle && data.circularCycle.length > 1) {
+        const cycle = data.circularCycle;
+        for (let i = 0; i < cycle.length - 1; i++) {
+          const from = cycle[i];
+          const to = cycle[i + 1];
+          const matched = edges.find((e) => e.source === from && e.target === to);
+          if (matched) circularEdgeSet.add(matched.id);
+        }
+      }
+    });
 
     return edges.map((edge) => {
+      const isCircular = circularEdgeSet.has(edge.id);
       const isConnected = blastRadius.activeEdgeIds.has(edge.id);
       const isOutgoing = edge.source === selectedNodeId;
 
-      if (isConnected) {
+      if (selectedNodeId) {
+        if (isConnected) {
+          return {
+            ...edge,
+            animated: true,
+            style: {
+              ...edge.style,
+              stroke: isCircular ? '#f43f5e' : isOutgoing ? '#818cf8' : '#34d399',
+              strokeWidth: 2.5,
+              opacity: 1,
+            },
+          };
+        }
+
+        return {
+          ...edge,
+          animated: false,
+          style: {
+            ...edge.style,
+            stroke: isCircular ? '#e11d48' : '#334155',
+            strokeWidth: isCircular ? 1.5 : 1,
+            opacity: isCircular ? 0.4 : 0.15,
+          },
+        };
+      }
+
+      // Default (no node selected): highlight circular edges in rose red
+      if (isCircular) {
         return {
           ...edge,
           animated: true,
           style: {
             ...edge.style,
-            stroke: isOutgoing ? '#818cf8' : '#34d399',
-            strokeWidth: 2.5,
-            opacity: 1,
+            stroke: '#f43f5e',
+            strokeWidth: 2,
+            opacity: 0.9,
           },
         };
       }
 
-      return {
-        ...edge,
-        animated: false,
-        style: {
-          ...edge.style,
-          stroke: '#334155',
-          strokeWidth: 1,
-          opacity: 0.15,
-        },
-      };
+      return edge;
     });
-  }, [edges, selectedNodeId, blastRadius]);
+  }, [edges, selectedNodeId, blastRadius, enrichedNodes]);
 
   const allNodeDataList = useMemo(() => {
     return nodes.map((n) => n.data as unknown as CodeNodeData);

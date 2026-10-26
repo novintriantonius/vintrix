@@ -8,6 +8,7 @@ import {
   GitCommit,
   CheckCircle,
   Flame,
+  WarningOctagon,
 } from '@phosphor-icons/react';
 
 export type NodeKind = 'controller' | 'service' | 'database' | 'security' | 'gateway';
@@ -31,6 +32,8 @@ export interface CodeNodeData {
   isDimmed?: boolean;
   isBlastRadius?: boolean;
   blastRole?: 'target' | 'upstream' | 'downstream';
+  isCircular?: boolean;
+  circularCycle?: string[];
   [key: string]: unknown;
 }
 
@@ -85,6 +88,7 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
   const nodeData = data as unknown as CodeNodeData;
   const config = KIND_CONFIG[nodeData.kind] || KIND_CONFIG.service;
   const isHot = nodeData.hotspotScore !== undefined && nodeData.hotspotScore >= 4;
+  const isCircular = nodeData.isCircular;
   const isDimmed = nodeData.isDimmed && !selected;
   const blastRole = nodeData.blastRole;
 
@@ -95,6 +99,8 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
           ? 'opacity-25 grayscale hover:grayscale-0 hover:opacity-100 border border-white/[0.04] bg-[#080d16]/60'
           : selected
           ? 'ring-2 ring-sky-400 shadow-[0_0_30px_rgba(56,189,248,0.35)] bg-[#0c1424] border-transparent'
+          : isCircular
+          ? 'ring-1 ring-rose-500/80 border-rose-500/60 bg-[#160a0f] shadow-[0_0_20px_rgba(244,63,94,0.22)]'
           : blastRole === 'upstream'
           ? 'ring-1 ring-emerald-400/80 shadow-[0_0_20px_rgba(52,211,153,0.25)] border-emerald-500/50 bg-[#08151a]'
           : blastRole === 'downstream'
@@ -146,6 +152,15 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {nodeData.isCircular && (
+              <span
+                className="text-[9px] font-mono px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-0.5 font-bold"
+                title={`Circular Dependency Detected: ${nodeData.circularCycle?.join(' -> ') || 'Dependency loop'}`}
+              >
+                <WarningOctagon size={10} weight="fill" className="text-rose-400" />
+                <span>CYCLE</span>
+              </span>
+            )}
             {nodeData.hotspotScore !== undefined && nodeData.hotspotScore >= 4 && (
               <span
                 className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-0.5 font-bold"
