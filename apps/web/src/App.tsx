@@ -25,7 +25,7 @@ import {
 import { CustomCodeNode, type CodeNodeData, type NodeKind } from './components/graph/CustomCodeNode';
 import { INITIAL_WORKSPACE_NODES, INITIAL_WORKSPACE_EDGES } from './components/graph/mockData';
 import { GraphToolbar } from './components/graph/GraphToolbar';
-import { getLayoutedNodes, type LayoutDirection } from './components/graph/layout';
+import { getLayoutedNodes, findShortestPath, type LayoutDirection } from './components/graph/layout';
 import { SidebarInspector } from './components/graph/SidebarInspector';
 import { SlidingCodeViewer } from './components/graph/SlidingCodeViewer';
 import { ChatboxView } from './components/chat/ChatboxView';
@@ -117,6 +117,9 @@ function WorkspaceContainer({
   const [showOnlyCycles, setShowOnlyCycles] = useState(false);
   const [blastDepth, setBlastDepth] = useState<1 | 2 | 'all'>(1);
   const [layoutDirection, setLayoutDirection] = useState<LayoutDirection>('TB');
+  const [isPathFinderActive, setIsPathFinderActive] = useState(false);
+  const [pathStartNodeId, setPathStartNodeId] = useState<string>('');
+  const [pathTargetNodeId, setPathTargetNodeId] = useState<string>('');
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
@@ -629,8 +632,34 @@ function WorkspaceContainer({
     return { upstreamNodeIds, downstreamNodeIds, activeEdgeIds };
   }, [selectedNodeId, edges, blastDepth]);
 
-  // Enriched filtered nodes with blast radius role, hop level, and dimming attributes
+  // Compute shortest path when Path Finder is active and both start and target are chosen
+  const activePath = useMemo(() => {
+    if (!isPathFinderActive || !pathStartNodeId || !pathTargetNodeId) return null;
+    return findShortestPath(pathStartNodeId, pathTargetNodeId, edges);
+  }, [isPathFinderActive, pathStartNodeId, pathTargetNodeId, edges]);
+
+  // Enriched filtered nodes with blast radius role, path finder role, hop level, and dimming attributes
   const displayNodes = useMemo(() => {
+    if (isPathFinderActive && pathStartNodeId && pathTargetNodeId) {
+      const pathNodeSet = new Set(activePath ? activePath.nodeIds : [pathStartNodeId, pathTargetNodeId]);
+      return filteredNodes.map((node) => {
+        const isStart = node.id === pathStartNodeId;
+        const isTarget = node.id === pathTargetNodeId;
+        const isPath = pathNodeSet.has(node.id);
+        const blastRole = isStart ? 'target' : isTarget ? 'downstream' : isPath ? 'upstream' : undefined;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            isDimmed: !isPath,
+            isBlastRadius: isPath,
+            blastRole,
+          },
+        };
+      });
+    }
+
     if (!selectedNodeId) return filteredNodes;
 
     return filteredNodes.map((node) => {
@@ -655,7 +684,7 @@ function WorkspaceContainer({
         },
       };
     });
-  }, [filteredNodes, selectedNodeId, blastRadius]);
+  }, [filteredNodes, selectedNodeId, blastRadius, isPathFinderActive, pathStartNodeId, pathTargetNodeId, activePath]);
 
   // Count nodes involved in circular dependency cycles
   const totalCyclesCount = useMemo(() => {
@@ -686,6 +715,36 @@ function WorkspaceContainer({
           return circularEdgeSet.has(e.id) || isVisible;
         })
       : edges;
+
+    // Path Finder active state: highlight only the edges on the shortest route
+    if (isPathFinderActive && pathStartNodeId && pathTargetNodeId && activePath) {
+      const pathEdgeSet = new Set(activePath.edgeIds);
+      return candidateEdges.map((edge) => {
+        const isPathEdge = pathEdgeSet.has(edge.id);
+        if (isPathEdge) {
+          return {
+            ...edge,
+            animated: true,
+            style: {
+              ...edge.style,
+              stroke: '#10b981', // bright emerald
+              strokeWidth: 3,
+              opacity: 1,
+            },
+          };
+        }
+        return {
+          ...edge,
+          animated: false,
+          style: {
+            ...edge.style,
+            stroke: '#1e293b',
+            strokeWidth: 1,
+            opacity: 0.1,
+          },
+        };
+      });
+    }
 
     return candidateEdges.map((edge) => {
       const isCircular = circularEdgeSet.has(edge.id);
@@ -734,7 +793,7 @@ function WorkspaceContainer({
 
       return edge;
     });
-  }, [edges, selectedNodeId, blastRadius, enrichedNodes, showOnlyCycles, filteredNodes]);
+  }, [edges, selectedNodeId, blastRadius, enrichedNodes, showOnlyCycles, filteredNodes, isPathFinderActive, pathStartNodeId, pathTargetNodeId, activePath]);
 
   const allNodeDataList = useMemo(() => {
     return enrichedNodes.map((n) => ({
@@ -1402,6 +1461,17 @@ graph TD
                 cyclesCount={totalCyclesCount}
                 layoutDirection={layoutDirection}
                 onSelectLayout={handleSelectLayout}
+                isPathFinderActive={isPathFinderActive}
+                onTogglePathFinder={() => {
+                  setIsPathFinderActive((prev) => {
+                    const next = !prev;
+                    if (!next) {
+                      setPathStartNodeId('');
+                      setPathTargetNodeId('');
+                    }
+                    return next;
+                  });
+                }}
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}
@@ -1461,6 +1531,78 @@ graph TD
                   <div className="text-[10px] text-slate-500 ml-1">
                     ↑{blastRadius.upstreamNodeIds.size} callers • ↓{blastRadius.downstreamNodeIds.size} callees
                   </div>
+                </div>
+              )}
+
+              {/* Floating Shortest Path Finder Controller */}
+              {isPathFinderActive && (
+                <div className="absolute top-16 left-6 z-20 flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-[#080d16]/95 backdrop-blur-md border border-emerald-500/30 shadow-2xl text-xs font-mono max-w-[92vw] sm:max-w-none">
+                  <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-[11px] pr-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span>Path Finder:</span>
+                  </div>
+
+                  {/* Start Node Selector */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400">From:</span>
+                    <select
+                      value={pathStartNodeId}
+                      onChange={(e) => setPathStartNodeId(e.target.value)}
+                      className="bg-[#0f172a] border border-white/10 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-emerald-500 max-w-[140px] truncate"
+                    >
+                      <option value="">Select source...</option>
+                      {nodes.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.data.label as string}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Target Node Selector */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400">To:</span>
+                    <select
+                      value={pathTargetNodeId}
+                      onChange={(e) => setPathTargetNodeId(e.target.value)}
+                      className="bg-[#0f172a] border border-white/10 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-emerald-500 max-w-[140px] truncate"
+                    >
+                      <option value="">Select target...</option>
+                      {nodes.map((n) => (
+                        <option key={n.id} value={n.id} disabled={n.id === pathStartNodeId}>
+                          {n.data.label as string}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Result status badge */}
+                  {pathStartNodeId && pathTargetNodeId && (
+                    <div className="flex items-center gap-1 text-[11px] pl-1">
+                      {activePath ? (
+                        <span className="text-emerald-300 bg-emerald-950/60 border border-emerald-500/40 px-2 py-0.5 rounded-full font-medium">
+                          {activePath.nodeIds.length - 1} hop{activePath.nodeIds.length - 1 === 1 ? '' : 's'} ({activePath.nodeIds.length} nodes)
+                        </span>
+                      ) : (
+                        <span className="text-amber-400 bg-amber-950/50 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                          No direct path found
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Clear / Close button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPathFinderActive(false);
+                      setPathStartNodeId('');
+                      setPathTargetNodeId('');
+                    }}
+                    className="ml-auto text-slate-400 hover:text-white px-1.5 py-0.5 rounded text-[10px] bg-white/[0.04] hover:bg-white/[0.08]"
+                  >
+                    ✕
+                  </button>
                 </div>
               )}
 

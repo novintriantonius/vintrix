@@ -14,6 +14,7 @@ import {
   Flame,
   WarningOctagon,
   TreeStructure,
+  NavigationArrow,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
 import type { LayoutDirection } from './layout';
@@ -33,6 +34,8 @@ interface GraphToolbarProps {
   cyclesCount?: number;
   layoutDirection?: LayoutDirection;
   onSelectLayout?: (direction: LayoutDirection) => void;
+  isPathFinderActive?: boolean;
+  onTogglePathFinder?: () => void;
   nodeCount: number;
   totalNodes: number;
   onResetView: () => void;
@@ -64,6 +67,8 @@ export function GraphToolbar({
   cyclesCount = 0,
   layoutDirection = 'TB',
   onSelectLayout,
+  isPathFinderActive = false,
+  onTogglePathFinder,
   nodeCount,
   totalNodes,
   onResetView,
@@ -241,6 +246,23 @@ export function GraphToolbar({
                 {cyclesCount}
               </span>
             )}
+          </button>
+        )}
+
+        {/* Shortest Path Finder Toggle */}
+        {onTogglePathFinder && (
+          <button
+            type="button"
+            onClick={onTogglePathFinder}
+            title={isPathFinderActive ? 'Path Finder active. Click to close.' : 'Open Shortest Dependency Path Finder'}
+            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+              isPathFinderActive
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 font-semibold shadow-sm'
+                : 'text-slate-400 hover:text-emerald-300 hover:bg-white/[0.04]'
+            }`}
+          >
+            <NavigationArrow size={12} weight={isPathFinderActive ? 'fill' : 'regular'} className={isPathFinderActive ? 'text-emerald-400' : 'text-slate-400'} />
+            <span className="hidden sm:inline">Route</span>
           </button>
         )}
       </div>

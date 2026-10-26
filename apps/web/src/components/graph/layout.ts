@@ -173,3 +173,53 @@ export function getLayoutedNodes(
 
   return positionedNodes;
 }
+
+/**
+ * Finds the shortest directed dependency path from startNodeId to targetNodeId using BFS.
+ * Returns the ordered node IDs and edge IDs in the path.
+ */
+export function findShortestPath(
+  startNodeId: string,
+  targetNodeId: string,
+  edges: Edge[]
+): { nodeIds: string[]; edgeIds: string[] } | null {
+  if (startNodeId === targetNodeId) {
+    return { nodeIds: [startNodeId], edgeIds: [] };
+  }
+
+  const adj: Record<string, { target: string; edgeId: string }[]> = {};
+  edges.forEach((e) => {
+    if (!adj[e.source]) adj[e.source] = [];
+    adj[e.source].push({ target: e.target, edgeId: e.id });
+  });
+
+  const queue: { current: string; pathNodes: string[]; pathEdges: string[] }[] = [
+    { current: startNodeId, pathNodes: [startNodeId], pathEdges: [] },
+  ];
+  const visited = new Set<string>([startNodeId]);
+
+  while (queue.length > 0) {
+    const { current, pathNodes, pathEdges } = queue.shift()!;
+    const neighbors = adj[current] || [];
+
+    for (const { target, edgeId } of neighbors) {
+      if (target === targetNodeId) {
+        return {
+          nodeIds: [...pathNodes, target],
+          edgeIds: [...pathEdges, edgeId],
+        };
+      }
+
+      if (!visited.has(target)) {
+        visited.add(target);
+        queue.push({
+          current: target,
+          pathNodes: [...pathNodes, target],
+          pathEdges: [...pathEdges, edgeId],
+        });
+      }
+    }
+  }
+
+  return null;
+}
