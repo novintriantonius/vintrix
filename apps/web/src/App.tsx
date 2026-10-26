@@ -203,18 +203,30 @@ function WorkspaceContainer({
 
   // Load sources, members, and graph whenever active workspace changes
   useEffect(() => {
+    // 1. Load local cached sources first to ensure immediate display
+    const localKey = `vintrix_sources_${currentWorkspaceId}`;
+    try {
+      const stored = localStorage.getItem(localKey);
+      if (stored) {
+        setSourcesList(JSON.parse(stored));
+      } else {
+        setSourcesList([]);
+      }
+    } catch {
+      setSourcesList([]);
+    }
+
     sourcesApi
       .list(currentWorkspaceId)
       .then((data) => {
-        if (data) {
-          setSourcesList(data.map(sourceApiToItem));
+        if (data && data.length > 0) {
+          const mapped = data.map(sourceApiToItem);
+          setSourcesList(mapped);
+          localStorage.setItem(localKey, JSON.stringify(mapped));
         }
       })
       .catch(() => {
-        const stored = localStorage.getItem(`vintrix_sources_${currentWorkspaceId}`);
-        if (!stored) {
-          setSourcesList([]);
-        }
+        // Fallback already loaded from localStorage
       });
 
     workspacesApi
@@ -417,7 +429,11 @@ function WorkspaceContainer({
     }
     setSourcesList((prev) => {
       const updated = prev.filter((s) => s.id !== sourceId);
-      localStorage.setItem('vintrix_sources_initialized', 'true');
+      try {
+        localStorage.setItem(`vintrix_sources_${currentWorkspaceId}`, JSON.stringify(updated));
+      } catch {
+        // pass
+      }
       return updated;
     });
     if (targetSource) {
@@ -1825,7 +1841,15 @@ graph TD
             lastSyncedAt: 'Just now',
             nodesCount: 1,
           };
-          setSourcesList((prev) => [item, ...prev]);
+          setSourcesList((prev) => {
+            const updated = [item, ...prev];
+            try {
+              localStorage.setItem(`vintrix_sources_${currentWorkspaceId}`, JSON.stringify(updated));
+            } catch {
+              // pass
+            }
+            return updated;
+          });
 
           // Fetch freshly indexed AST knowledge nodes from API for this source
           graphApi
