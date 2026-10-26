@@ -97,7 +97,14 @@ function WorkspaceContainer({
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(() => {
     return localStorage.getItem('vintrix_active_workspace') || '';
   });
-  const [workspacesList, setWorkspacesList] = useState<Workspace[]>([]);
+  const [workspacesList, setWorkspacesList] = useState<Workspace[]>(() => {
+    try {
+      const stored = localStorage.getItem('vintrix_workspaces');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
@@ -162,12 +169,35 @@ function WorkspaceContainer({
       .then((data) => {
         if (data && data.length > 0) {
           setWorkspacesList(data);
+          try {
+            localStorage.setItem('vintrix_workspaces', JSON.stringify(data));
+          } catch {
+            // pass
+          }
           // If current selection is not valid or empty, switch to the first legitimate workspace
           if (!data.some((w) => w.id === currentWorkspaceId)) {
             setCurrentWorkspaceId(data[0].id);
             localStorage.setItem('vintrix_active_workspace', data[0].id);
           }
         } else {
+          // If user has cached workspaces, do not overwrite with empty
+          const stored = localStorage.getItem('vintrix_workspaces');
+          if (stored) {
+            try {
+              const parsed: Workspace[] = JSON.parse(stored);
+              if (parsed.length > 0) {
+                setWorkspacesList(parsed);
+                if (!parsed.some((w) => w.id === currentWorkspaceId)) {
+                  setCurrentWorkspaceId(parsed[0].id);
+                  localStorage.setItem('vintrix_active_workspace', parsed[0].id);
+                }
+                return;
+              }
+            } catch {
+              // pass
+            }
+          }
+
           // If user has zero workspaces, auto-create their personal default workspace
           const defaultWsName = user?.displayName ? `${user.displayName.split(' ')[0]}'s Workspace` : 'My Workspace';
           const localWs: Workspace = {
@@ -178,13 +208,33 @@ function WorkspaceContainer({
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
-          setWorkspacesList([localWs]);
+          const list = [localWs];
+          setWorkspacesList(list);
           setCurrentWorkspaceId(localWs.id);
+          localStorage.setItem('vintrix_workspaces', JSON.stringify(list));
           localStorage.setItem('vintrix_active_workspace', localWs.id);
         }
       })
       .catch((err) => {
         console.warn('[Workspaces List] Failed to fetch member workspaces:', err);
+        // Fallback: check cached workspaces first
+        const stored = localStorage.getItem('vintrix_workspaces');
+        if (stored) {
+          try {
+            const parsed: Workspace[] = JSON.parse(stored);
+            if (parsed.length > 0) {
+              setWorkspacesList(parsed);
+              if (!parsed.some((w) => w.id === currentWorkspaceId)) {
+                setCurrentWorkspaceId(parsed[0].id);
+                localStorage.setItem('vintrix_active_workspace', parsed[0].id);
+              }
+              return;
+            }
+          } catch {
+            // pass
+          }
+        }
+
         // Fallback auto-provision
         const defaultWsName = user?.displayName ? `${user.displayName.split(' ')[0]}'s Workspace` : 'My Workspace';
         const localWs: Workspace = {
@@ -195,8 +245,10 @@ function WorkspaceContainer({
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        setWorkspacesList([localWs]);
+        const list = [localWs];
+        setWorkspacesList(list);
         setCurrentWorkspaceId(localWs.id);
+        localStorage.setItem('vintrix_workspaces', JSON.stringify(list));
         localStorage.setItem('vintrix_active_workspace', localWs.id);
       });
   }, [user]);
@@ -322,7 +374,15 @@ function WorkspaceContainer({
         description: newWorkspaceDesc.trim() || undefined,
         ownerId: user?.id || '00000000-0000-0000-0000-000000000001',
       });
-      setWorkspacesList((prev) => [created, ...prev]);
+      setWorkspacesList((prev) => {
+        const updated = [created, ...prev];
+        try {
+          localStorage.setItem('vintrix_workspaces', JSON.stringify(updated));
+        } catch {
+          // pass
+        }
+        return updated;
+      });
       setCurrentWorkspaceId(created.id);
       localStorage.setItem('vintrix_active_workspace', created.id);
       setIsCreateWorkspaceOpen(false);
