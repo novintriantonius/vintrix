@@ -113,6 +113,7 @@ function WorkspaceContainer({
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [showOnlyHotspots, setShowOnlyHotspots] = useState(false);
+  const [showOnlyCycles, setShowOnlyCycles] = useState(false);
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
@@ -543,6 +544,7 @@ function WorkspaceContainer({
         selectedSource === 'all' || data.sourceName === selectedSource;
       const matchesHotspot =
         !showOnlyHotspots || (data.hotspotScore !== undefined && data.hotspotScore >= 4);
+      const matchesCycles = !showOnlyCycles || Boolean(data.isCircular);
       const matchesSearch =
         !searchQuery ||
         data.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -551,9 +553,9 @@ function WorkspaceContainer({
         (data.sourceName && data.sourceName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (data.tags && data.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
 
-      return matchesKind && matchesSource && matchesHotspot && matchesSearch;
+      return matchesKind && matchesSource && matchesHotspot && matchesCycles && matchesSearch;
     });
-  }, [enrichedNodes, selectedKind, selectedSource, showOnlyHotspots, searchQuery]);
+  }, [enrichedNodes, selectedKind, selectedSource, showOnlyHotspots, showOnlyCycles, searchQuery]);
 
   // Compute blast radius: sets of upstream callers and downstream callees when a node is selected
   const blastRadius = useMemo(() => {
@@ -607,6 +609,11 @@ function WorkspaceContainer({
     });
   }, [filteredNodes, selectedNodeId, blastRadius]);
 
+  // Count nodes involved in circular dependency cycles
+  const totalCyclesCount = useMemo(() => {
+    return enrichedNodes.filter((n) => (n.data as unknown as CodeNodeData)?.isCircular).length;
+  }, [enrichedNodes]);
+
   // Enriched edges with animated glowing style for blast radius connections and circular warnings
   const displayEdges = useMemo(() => {
     // Identify edges that form part of a detected circular cycle
@@ -624,7 +631,15 @@ function WorkspaceContainer({
       }
     });
 
-    return edges.map((edge) => {
+    // If filtering by cycles only, also filter edges to keep only circular edges or edges between visible cycle nodes
+    const candidateEdges = showOnlyCycles
+      ? edges.filter((e) => {
+          const isVisible = filteredNodes.some((n) => n.id === e.source) && filteredNodes.some((n) => n.id === e.target);
+          return circularEdgeSet.has(e.id) || isVisible;
+        })
+      : edges;
+
+    return candidateEdges.map((edge) => {
       const isCircular = circularEdgeSet.has(edge.id);
       const isConnected = blastRadius.activeEdgeIds.has(edge.id);
       const isOutgoing = edge.source === selectedNodeId;
@@ -671,11 +686,14 @@ function WorkspaceContainer({
 
       return edge;
     });
-  }, [edges, selectedNodeId, blastRadius, enrichedNodes]);
+  }, [edges, selectedNodeId, blastRadius, enrichedNodes, showOnlyCycles, filteredNodes]);
 
   const allNodeDataList = useMemo(() => {
-    return nodes.map((n) => n.data as unknown as CodeNodeData);
-  }, [nodes]);
+    return enrichedNodes.map((n) => ({
+      ...(n.data as unknown as CodeNodeData),
+      id: n.id,
+    }));
+  }, [enrichedNodes]);
 
   const selectedNodeData = useMemo(() => {
     const found = enrichedNodes.find((n) => n.id === selectedNodeId);
@@ -1319,6 +1337,9 @@ graph TD
                 availableSources={availableSources}
                 onlyHotspots={showOnlyHotspots}
                 onToggleHotspots={() => setShowOnlyHotspots((prev) => !prev)}
+                onlyCycles={showOnlyCycles}
+                onToggleCycles={() => setShowOnlyCycles((prev) => !prev)}
+                cyclesCount={totalCyclesCount}
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}
@@ -1358,6 +1379,10 @@ graph TD
             <SidebarInspector
               selectedNode={selectedNodeData}
               onSelectNodeByPath={handleSelectNodeByPath}
+              onSelectNodeById={(id) => {
+                setSelectedNodeId(id);
+                focusNodeOnCanvas(id);
+              }}
               allNodes={allNodeDataList}
               isOpenMobile={isMobileInspectorOpen}
               onCloseMobile={() => setIsMobileInspectorOpen(false)}

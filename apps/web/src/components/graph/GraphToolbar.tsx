@@ -12,6 +12,7 @@ import {
   CaretDown,
   Check,
   Flame,
+  WarningOctagon,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
 
@@ -25,6 +26,9 @@ interface GraphToolbarProps {
   availableSources: { id: string; label: string }[];
   onlyHotspots?: boolean;
   onToggleHotspots?: () => void;
+  onlyCycles?: boolean;
+  onToggleCycles?: () => void;
+  cyclesCount?: number;
   nodeCount: number;
   totalNodes: number;
   onResetView: () => void;
@@ -51,6 +55,9 @@ export function GraphToolbar({
   availableSources,
   onlyHotspots = false,
   onToggleHotspots,
+  onlyCycles = false,
+  onToggleCycles,
+  cyclesCount = 0,
   nodeCount,
   totalNodes,
   onResetView,
@@ -199,6 +206,30 @@ export function GraphToolbar({
           >
             <Flame size={12} weight={onlyHotspots ? 'fill' : 'regular'} className={onlyHotspots ? 'text-amber-400' : 'text-slate-400'} />
             <span className="hidden sm:inline">Hotspots</span>
+          </button>
+        )}
+
+        {/* Circular Dependency Cycles Toggle Button */}
+        {onToggleCycles && (
+          <button
+            type="button"
+            onClick={onToggleCycles}
+            title={onlyCycles ? 'Showing only circular dependency loops. Click to show all.' : 'Filter to circular dependency cycles'}
+            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+              onlyCycles
+                ? 'bg-rose-500/25 text-rose-300 border border-rose-500/50 font-semibold shadow-sm'
+                : 'text-slate-400 hover:text-rose-300 hover:bg-white/[0.04]'
+            }`}
+          >
+            <WarningOctagon size={12} weight={onlyCycles ? 'fill' : 'regular'} className={onlyCycles ? 'text-rose-400' : 'text-slate-400'} />
+            <span className="hidden sm:inline">Cycles</span>
+            {cyclesCount > 0 && (
+              <span className={`text-[9px] font-mono px-1 py-0.2 rounded-full font-bold ${
+                onlyCycles ? 'bg-rose-500/30 text-rose-200' : 'bg-rose-500/20 text-rose-400'
+              }`}>
+                {cyclesCount}
+              </span>
+            )}
           </button>
         )}
       </div>
