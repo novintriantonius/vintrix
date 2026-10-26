@@ -141,19 +141,22 @@ export function CommandPalette({
   // Convert nodes to AST items
   const astItems: CommandItem[] = nodes.map((n) => {
     const isHot = n.data.hotspotScore !== undefined && n.data.hotspotScore >= 4;
+    const isCycle = !!n.data.isCircular;
     return {
       id: `node-${n.id}`,
       category: 'ast',
       title: n.data.label,
       subtitle: `${n.data.filePath} • ${n.data.sourceName || 'Workspace'}${
         n.data.hotspotScore ? ` • Coupling: ${n.data.hotspotScore}` : ''
-      }`,
-      icon: isHot ? (
+      }${isCycle ? ' • Circular Dependency' : ''}`,
+      icon: isCycle ? (
+        <FileCode className="w-4 h-4 text-rose-400" />
+      ) : isHot ? (
         <FileCode className="w-4 h-4 text-amber-400" />
       ) : (
         <FileCode className="w-4 h-4 text-cyan-400" />
       ),
-      badge: isHot ? `${n.data.kind} (HOT)` : n.data.kind,
+      badge: isCycle ? 'CYCLE' : isHot ? `${n.data.kind} (HOT)` : n.data.kind,
       action: () => {
         onSelectNode(n);
         onClose();
