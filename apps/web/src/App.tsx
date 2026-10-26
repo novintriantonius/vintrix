@@ -112,6 +112,7 @@ function WorkspaceContainer({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
+  const [showOnlyHotspots, setShowOnlyHotspots] = useState(false);
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
@@ -491,6 +492,8 @@ function WorkspaceContainer({
       const matchesKind = selectedKind === 'all' || data.kind === selectedKind;
       const matchesSource =
         selectedSource === 'all' || data.sourceName === selectedSource;
+      const matchesHotspot =
+        !showOnlyHotspots || (data.hotspotScore !== undefined && data.hotspotScore >= 4);
       const matchesSearch =
         !searchQuery ||
         data.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -499,9 +502,9 @@ function WorkspaceContainer({
         (data.sourceName && data.sourceName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (data.tags && data.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
 
-      return matchesKind && matchesSource && matchesSearch;
+      return matchesKind && matchesSource && matchesHotspot && matchesSearch;
     });
-  }, [nodes, selectedKind, selectedSource, searchQuery]);
+  }, [enrichedNodes, selectedKind, selectedSource, showOnlyHotspots, searchQuery]);
 
   const allNodeDataList = useMemo(() => {
     return nodes.map((n) => n.data as unknown as CodeNodeData);
@@ -1101,6 +1104,8 @@ graph TD
                 selectedSource={selectedSource}
                 onSourceSelect={setSelectedSource}
                 availableSources={availableSources}
+                onlyHotspots={showOnlyHotspots}
+                onToggleHotspots={() => setShowOnlyHotspots((prev) => !prev)}
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}

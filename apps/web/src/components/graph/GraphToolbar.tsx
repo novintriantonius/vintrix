@@ -11,6 +11,7 @@ import {
   FileText,
   CaretDown,
   Check,
+  Flame,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
 
@@ -22,6 +23,8 @@ interface GraphToolbarProps {
   selectedSource: string;
   onSourceSelect: (source: string) => void;
   availableSources: { id: string; label: string }[];
+  onlyHotspots?: boolean;
+  onToggleHotspots?: () => void;
   nodeCount: number;
   totalNodes: number;
   onResetView: () => void;
@@ -46,6 +49,8 @@ export function GraphToolbar({
   selectedSource,
   onSourceSelect,
   availableSources,
+  onlyHotspots = false,
+  onToggleHotspots,
   nodeCount,
   totalNodes,
   onResetView,
@@ -179,6 +184,23 @@ export function GraphToolbar({
             </button>
           );
         })}
+
+        {/* Hotspots Toggle Button */}
+        {onToggleHotspots && (
+          <button
+            type="button"
+            onClick={onToggleHotspots}
+            title={onlyHotspots ? 'Showing only high-coupling hotspots. Click to show all.' : 'Filter to high-coupling hotspot nodes'}
+            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+              onlyHotspots
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold shadow-sm'
+                : 'text-slate-400 hover:text-amber-300 hover:bg-white/[0.04]'
+            }`}
+          >
+            <Flame size={12} weight={onlyHotspots ? 'fill' : 'regular'} className={onlyHotspots ? 'text-amber-400' : 'text-slate-400'} />
+            <span className="hidden sm:inline">Hotspots</span>
+          </button>
+        )}
       </div>
 
       <div className="h-3.5 w-px bg-white/[0.08] shrink-0" />
