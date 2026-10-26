@@ -30,15 +30,136 @@ export const authRouter = new Elysia({ prefix: '/auth' })
   }))
   .get('/google', ({ redirect }) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5173/auth/callback';
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/google/callback';
     if (!clientId) {
       // In local dev without OAuth credentials configured, provide mock redirect with code
       return redirect(`/api/v1/auth/callback/redirect?provider=google&code=mock-google-code-${Date.now()}`);
     }
     const scope = encodeURIComponent('openid profile email');
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&access_type=offline`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
     return redirect(authUrl);
   })
+  .get(
+    '/google/callback',
+    async ({ query, jwt, redirect }) => {
+      const code = query.code;
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+      if (!code) {
+        return redirect(`${frontendUrl}?auth_error=missing_code`);
+      }
+
+      try {
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/google/callback';
+
+        // 1. Exchange code for Google access token
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            code,
+            client_id: clientId || '',
+            client_secret: clientSecret || '',
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code',
+          }),
+        });
+
+        if (!tokenResponse.ok) {
+          const errText = await tokenResponse.text();
+          console.error('[Google OAuth] Token exchange error:', errText);
+          return redirect(`${frontendUrl}?auth_error=token_exchange_failed`);
+        }
+
+        const tokenData = (await tokenResponse.json()) as { access_token: string; id_token?: string };
+
+        // 2. Fetch Google user profile
+        const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+
+        if (!userinfoRes.ok) {
+          return redirect(`${frontendUrl}?auth_error=failed_fetching_profile`);
+        }
+
+        const profile = (await userinfoRes.json()) as {
+          id: string;
+          email: string;
+          name?: string;
+          picture?: string;
+        };
+
+        const targetEmail = profile.email;
+        const displayName = profile.name || 'Google User';
+        const avatarUrl = profile.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${targetEmail}`;
+        const providerId = profile.id;
+
+        let userId = `usr-google-${Date.now()}`;
+        try {
+          const existingUsers = await db.select().from(users).where(eq(users.email, targetEmail)).limit(1);
+          if (existingUsers.length > 0) {
+            userId = existingUsers[0].id;
+            // Update profile info
+            await db
+              .update(users)
+              .set({
+                displayName,
+                avatarUrl,
+                updatedAt: new Date(),
+              })
+              .where(eq(users.id, userId));
+          } else {
+            const inserted = await db
+              .insert(users)
+              .values({
+                email: targetEmail,
+                displayName,
+                avatarUrl,
+                provider: 'google',
+                providerId,
+              })
+              .returning();
+            if (inserted.length > 0) {
+              userId = inserted[0].id;
+            }
+          }
+        } catch (dbErr) {
+          console.warn('[Google OAuth] DB upsert warning:', dbErr);
+        }
+
+        // 3. Issue Vintrix JWT Token
+        const token = await jwt.sign({
+          sub: userId,
+          email: targetEmail,
+          name: displayName,
+          provider: 'google',
+        });
+
+        const userPayload = encodeURIComponent(
+          JSON.stringify({
+            id: userId,
+            email: targetEmail,
+            displayName,
+            avatarUrl,
+            provider: 'google',
+          })
+        );
+
+        return redirect(`${frontendUrl}?token=${encodeURIComponent(token)}&user=${userPayload}`);
+      } catch (error) {
+        console.error('[Google OAuth] Error during authentication flow:', error);
+        return redirect(`${frontendUrl}?auth_error=authentication_failed`);
+      }
+    },
+    {
+      query: t.Object({
+        code: t.Optional(t.String()),
+        error: t.Optional(t.String()),
+      }),
+    }
+  )
   .get('/github', ({ redirect }) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
     const redirectUri = process.env.GITHUB_REDIRECT_URI || 'http://localhost:5173/auth/callback';

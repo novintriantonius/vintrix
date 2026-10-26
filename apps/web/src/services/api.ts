@@ -9,8 +9,11 @@ async function request<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
+  const token = localStorage.getItem('vintrix_token');
+  const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeaders, ...options?.headers },
     ...options,
   });
   if (!res.ok) {

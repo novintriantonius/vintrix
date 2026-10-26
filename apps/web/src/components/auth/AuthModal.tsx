@@ -18,6 +18,12 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     setLoadingProvider(provider);
     setErrorMsg(null);
     try {
+      if (provider === 'google' && !customEmail.trim()) {
+        // Redirect directly to real Google OAuth flow
+        window.location.href = '/api/v1/auth/google';
+        return;
+      }
+
       const email = customEmail.trim()
         ? customEmail.trim()
         : provider === 'google'

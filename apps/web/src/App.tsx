@@ -152,8 +152,13 @@ function WorkspaceContainer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Fetch workspaces list
+  // Fetch workspaces list only for authenticated session
   useEffect(() => {
+    if (!user) {
+      setWorkspacesList([]);
+      return;
+    }
+
     workspacesApi
       .list()
       .then((data) => {
@@ -163,31 +168,14 @@ function WorkspaceContainer({
             setCurrentWorkspaceId(data[0].id);
           }
         } else {
-          setWorkspacesList([
-            {
-              id: DEFAULT_WORKSPACE_ID,
-              name: 'vintrix-monorepo',
-              description: 'Primary codebase workspace',
-              ownerId: '00000000-0000-0000-0000-000000000001',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ]);
+          setWorkspacesList([]);
         }
       })
-      .catch(() => {
-        setWorkspacesList([
-          {
-            id: DEFAULT_WORKSPACE_ID,
-            name: 'vintrix-monorepo',
-            description: 'Primary codebase workspace',
-            ownerId: '00000000-0000-0000-0000-000000000001',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ]);
+      .catch((err) => {
+        console.warn('[Workspaces List] Failed to fetch member workspaces:', err);
+        setWorkspacesList([]);
       });
-  }, []);
+  }, [user, currentWorkspaceId]);
 
   // Load sources, members, and graph whenever active workspace changes
   useEffect(() => {
@@ -1914,6 +1902,15 @@ export default function App() {
     localStorage.removeItem('vintrix_token');
     localStorage.removeItem('vintrix_user');
     setCurrentUser(null);
+    setView('landing');
+  };
+
+  const handleOpenApp = () => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setView('app');
   };
 
   // Validate session token on mount with /auth/me, or catch OAuth URL query callback params
@@ -1959,21 +1956,29 @@ export default function App() {
     }
   }, []);
 
-  if (view === 'landing') {
+  // Force redirection to landing if session is lost while on dashboard
+  useEffect(() => {
+    if (view === 'app' && !currentUser) {
+      setView('landing');
+      setIsAuthModalOpen(true);
+    }
+  }, [view, currentUser]);
+
+  if (view === 'landing' || !currentUser) {
     return (
       <div className="min-h-screen bg-[#050a10] text-[#f8fafc] selection:bg-brand-500/20 selection:text-brand-300">
         <Nav
-          onOpenApp={() => setView('app')}
+          onOpenApp={handleOpenApp}
           onOpenAuth={() => setIsAuthModalOpen(true)}
           user={currentUser}
           onLogout={handleLogout}
         />
         <main>
-          <Hero onOpenApp={() => setView('app')} />
+          <Hero onOpenApp={handleOpenApp} />
           <FeaturesSection />
           <HowItWorksSection />
           <OpenSourceSection />
-          <CtaSection onOpenApp={() => setView('app')} />
+          <CtaSection onOpenApp={handleOpenApp} />
         </main>
         <Footer />
 
