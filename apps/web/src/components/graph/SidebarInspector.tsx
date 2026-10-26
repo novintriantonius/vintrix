@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   FileCode,
   FolderSimple,
@@ -10,6 +10,9 @@ import {
   ShieldCheck,
   TreeStructure,
   X,
+  Flame,
+  ArrowDown,
+  ArrowUp,
 } from '@phosphor-icons/react';
 import type { CodeNodeData } from './CustomCodeNode';
 
@@ -28,8 +31,17 @@ export function SidebarInspector({
   isOpenMobile,
   onCloseMobile,
 }: SidebarInspectorProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'explorer' | 'security'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'explorer' | 'hotspots' | 'security'>('details');
   const [copied, setCopied] = useState(false);
+
+  // Sort nodes by hotspot coupling score descending
+  const hotspotNodes = useMemo(() => {
+    return [...allNodes].sort((a, b) => {
+      const scoreA = a.hotspotScore ?? (a.inDegree ?? 0) + (a.outDegree ?? 0);
+      const scoreB = b.hotspotScore ?? (b.inDegree ?? 0) + (b.outDegree ?? 0);
+      return scoreB - scoreA;
+    });
+  }, [allNodes]);
 
   const handleCopyCode = () => {
     if (!selectedNode) return;
@@ -70,35 +82,46 @@ export function SidebarInspector({
         <div className="flex bg-[#0d1422] p-1 rounded-lg border border-white/[0.06]">
           <button
             onClick={() => setActiveTab('details')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
               activeTab === 'details'
                 ? 'text-white bg-white/10 shadow-sm font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Info size={13} />
-            AST Node
+            <Info size={12} />
+            AST
+          </button>
+          <button
+            onClick={() => setActiveTab('hotspots')}
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
+              activeTab === 'hotspots'
+                ? 'text-amber-300 bg-amber-500/20 shadow-sm font-semibold border border-amber-500/30'
+                : 'text-slate-400 hover:text-amber-300'
+            }`}
+          >
+            <Flame size={12} weight={activeTab === 'hotspots' ? 'fill' : 'regular'} className={activeTab === 'hotspots' ? 'text-amber-400' : ''} />
+            Hotspots
           </button>
           <button
             onClick={() => setActiveTab('explorer')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
               activeTab === 'explorer'
                 ? 'text-white bg-white/10 shadow-sm font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <FolderSimple size={13} />
-            Files ({allNodes.length})
+            <FolderSimple size={12} />
+            Files
           </button>
           <button
             onClick={() => setActiveTab('security')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
               activeTab === 'security'
                 ? 'text-white bg-white/10 shadow-sm font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <ShieldCheck size={13} />
+            <ShieldCheck size={12} />
             Security
           </button>
         </div>
@@ -198,6 +221,82 @@ export function SidebarInspector({
               </div>
             )}
           </>
+        )}
+
+        {activeTab === 'hotspots' && (
+          <div className="space-y-2">
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-1">
+              <div className="flex items-center gap-1.5 text-amber-300 font-semibold text-xs">
+                <Flame size={14} weight="fill" className="text-amber-400" />
+                <span>Architectural Coupling Ranking</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Ranked by total connections (incoming dependents + outgoing dependencies). Nodes with score ≥ 4 are critical architectural bottlenecks.
+              </p>
+            </div>
+
+            <div className="space-y-1 mt-3">
+              {hotspotNodes.map((n, idx) => {
+                const score = n.hotspotScore ?? (n.inDegree ?? 0) + (n.outDegree ?? 0);
+                const isHot = score >= 4;
+                const isSelected = selectedNode?.filePath === n.filePath;
+
+                return (
+                  <button
+                    key={n.filePath}
+                    onClick={() => onSelectNodeByPath(n.filePath)}
+                    className={`w-full text-left p-2.5 rounded-xl border text-[11px] transition-all flex items-center justify-between ${
+                      isSelected
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                        : isHot
+                        ? 'bg-[#0d1422] border-amber-500/25 hover:border-amber-500/50 text-slate-200'
+                        : 'bg-[#0b1320]/40 border-white/5 text-slate-400 hover:bg-[#0b1320] hover:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <span className={`text-[10px] font-mono font-bold w-4 text-center shrink-0 ${
+                        idx < 3 ? 'text-amber-400' : 'text-slate-500'
+                      }`}>
+                        #{idx + 1}
+                      </span>
+                      <div className="truncate">
+                        <div className="font-semibold text-slate-100 truncate flex items-center gap-1.5">
+                          <span>{n.label}</span>
+                          {isHot && (
+                            <span className="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                              HOT
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono truncate">
+                          {n.filePath}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 text-[10px] font-mono bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/[0.06]">
+                        <span className="flex items-center text-sky-400" title="Incoming dependents">
+                          <ArrowDown size={9} />{n.inDegree ?? 0}
+                        </span>
+                        <span className="text-slate-600">/</span>
+                        <span className="flex items-center text-indigo-400" title="Outgoing dependencies">
+                          <ArrowUp size={9} />{n.outDegree ?? 0}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                        isHot
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-white/5 text-slate-400'
+                      }`}>
+                        {score}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {activeTab === 'explorer' && (
