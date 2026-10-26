@@ -86,7 +86,7 @@ export function ManageSourcesModal({
     onTriggerReindex(id);
     setTimeout(() => {
       setReindexingId(null);
-    }, 1200);
+    }, 2500);
   };
 
   const copyWebhookUrl = (id: string) => {
