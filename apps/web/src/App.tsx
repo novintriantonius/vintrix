@@ -25,6 +25,7 @@ import {
 import { CustomCodeNode, type CodeNodeData, type NodeKind } from './components/graph/CustomCodeNode';
 import { INITIAL_WORKSPACE_NODES, INITIAL_WORKSPACE_EDGES } from './components/graph/mockData';
 import { GraphToolbar } from './components/graph/GraphToolbar';
+import { getLayoutedNodes, type LayoutDirection } from './components/graph/layout';
 import { SidebarInspector } from './components/graph/SidebarInspector';
 import { SlidingCodeViewer } from './components/graph/SlidingCodeViewer';
 import { ChatboxView } from './components/chat/ChatboxView';
@@ -115,6 +116,7 @@ function WorkspaceContainer({
   const [showOnlyHotspots, setShowOnlyHotspots] = useState(false);
   const [showOnlyCycles, setShowOnlyCycles] = useState(false);
   const [blastDepth, setBlastDepth] = useState<1 | 2 | 'all'>(1);
+  const [layoutDirection, setLayoutDirection] = useState<LayoutDirection>('TB');
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [isManageSourcesOpen, setIsManageSourcesOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
@@ -759,6 +761,18 @@ function WorkspaceContainer({
     [nodes, setCenter]
   );
 
+  // Apply layout preset
+  const handleSelectLayout = (direction: LayoutDirection) => {
+    setLayoutDirection(direction);
+    setNodes((prevNodes) => {
+      const layouted = getLayoutedNodes(prevNodes, edges, direction);
+      return layouted;
+    });
+    setTimeout(() => {
+      fitView({ duration: 500 });
+    }, 50);
+  };
+
   const handleSelectNodeByPath = (path: string) => {
     const target = nodes.find((n) => (n.data as unknown as CodeNodeData)?.filePath === path);
     if (target) {
@@ -1386,6 +1400,8 @@ graph TD
                 onlyCycles={showOnlyCycles}
                 onToggleCycles={() => setShowOnlyCycles((prev) => !prev)}
                 cyclesCount={totalCyclesCount}
+                layoutDirection={layoutDirection}
+                onSelectLayout={handleSelectLayout}
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}

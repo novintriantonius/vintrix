@@ -13,8 +13,10 @@ import {
   Check,
   Flame,
   WarningOctagon,
+  TreeStructure,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
+import type { LayoutDirection } from './layout';
 
 interface GraphToolbarProps {
   searchQuery: string;
@@ -29,6 +31,8 @@ interface GraphToolbarProps {
   onlyCycles?: boolean;
   onToggleCycles?: () => void;
   cyclesCount?: number;
+  layoutDirection?: LayoutDirection;
+  onSelectLayout?: (direction: LayoutDirection) => void;
   nodeCount: number;
   totalNodes: number;
   onResetView: () => void;
@@ -58,6 +62,8 @@ export function GraphToolbar({
   onlyCycles = false,
   onToggleCycles,
   cyclesCount = 0,
+  layoutDirection = 'TB',
+  onSelectLayout,
   nodeCount,
   totalNodes,
   onResetView,
@@ -66,22 +72,27 @@ export function GraphToolbar({
   onExportReport,
 }: GraphToolbarProps) {
   const [isScopeDropdownOpen, setIsScopeDropdownOpen] = useState(false);
+  const [isLayoutDropdownOpen, setIsLayoutDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const layoutDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close custom dropdown when clicking outside
+  // Close custom dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsScopeDropdownOpen(false);
       }
+      if (layoutDropdownRef.current && !layoutDropdownRef.current.contains(event.target as Node)) {
+        setIsLayoutDropdownOpen(false);
+      }
     }
-    if (isScopeDropdownOpen) {
+    if (isScopeDropdownOpen || isLayoutDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isScopeDropdownOpen]);
+  }, [isScopeDropdownOpen, isLayoutDropdownOpen]);
 
   const currentSourceLabel =
     selectedSource === 'all'
@@ -249,6 +260,55 @@ export function GraphToolbar({
           <Sparkle size={12} className="text-sky-400" />
           <span>Fit</span>
         </button>
+
+        {/* Layout Presets Dropdown */}
+        {onSelectLayout && (
+          <div className="relative shrink-0" ref={layoutDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsLayoutDropdownOpen((prev) => !prev)}
+              className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors border border-white/[0.06]"
+              title="Change Graph Auto-Layout"
+            >
+              <TreeStructure size={12} className="text-indigo-400" />
+              <span className="hidden sm:inline">
+                {layoutDirection === 'TB' ? 'Tree ↓' : layoutDirection === 'LR' ? 'Flow →' : layoutDirection === 'GRID' ? 'Grid ⊞' : 'Radial ⊙'}
+              </span>
+              <CaretDown size={10} className={`text-slate-400 transition-transform ${isLayoutDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isLayoutDropdownOpen && (
+              <div className="absolute top-full right-0 mt-1.5 w-36 bg-[#080d16] border border-white/10 rounded-lg shadow-2xl p-1 z-50 space-y-0.5">
+                {[
+                  { dir: 'TB' as const, label: 'Hierarchical (Top-Down)', icon: '↓' },
+                  { dir: 'LR' as const, label: 'Flow (Left-to-Right)', icon: '→' },
+                  { dir: 'GRID' as const, label: 'Orthogonal Grid', icon: '⊞' },
+                  { dir: 'RADIAL' as const, label: 'Radial Cluster', icon: '⊙' },
+                ].map((item) => (
+                  <button
+                    key={item.dir}
+                    type="button"
+                    onClick={() => {
+                      onSelectLayout(item.dir);
+                      setIsLayoutDropdownOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-[11px] text-left transition-colors ${
+                      layoutDirection === item.dir
+                        ? 'bg-indigo-600/25 text-indigo-200 font-semibold border border-indigo-500/30'
+                        : 'text-slate-300 hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-mono text-indigo-400 text-xs">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </span>
+                    {layoutDirection === item.dir && <Check size={11} className="text-indigo-400 shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {(onExportPng || onExportMermaid || onExportReport) && (
