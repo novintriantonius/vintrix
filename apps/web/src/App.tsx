@@ -193,7 +193,16 @@ function WorkspaceContainer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Fetch workspaces list only for authenticated session
+  // Update title based on active workspace / tab
+  useEffect(() => {
+    const wsName = workspacesList.find((w) => w.id === currentWorkspaceId)?.name;
+    const tabName = workspaceTab === 'chat' ? 'AI Chat' : 'Knowledge Graph';
+    if (wsName) {
+      document.title = `${wsName} - ${tabName} | Vintrix Studio`;
+    } else {
+      document.title = `Studio & Architecture Graph | Vintrix`;
+    }
+  }, [currentWorkspaceId, workspaceTab, workspacesList]);
   useEffect(() => {
     if (!user) {
       setWorkspacesList([]);
@@ -2405,6 +2414,13 @@ export default function App() {
   }, []);
 
   const isDashboardRoute = currentPath.startsWith('/dashboard') || currentPath.startsWith('/app');
+
+  // Fallback Dynamic Page Title for Landing route
+  useEffect(() => {
+    if (!isDashboardRoute) {
+      document.title = 'Vintrix - Codebase Knowledge Graph & Architecture Intelligence';
+    }
+  }, [isDashboardRoute]);
 
   // Guard: if user is on dashboard route without authenticated session, redirect to landing & prompt auth
   useEffect(() => {
