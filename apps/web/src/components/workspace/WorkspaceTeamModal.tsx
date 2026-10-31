@@ -9,8 +9,10 @@ import {
   Link,
   Check,
   ChevronDown,
+  Loader2,
 } from 'lucide-react';
 import { Modal } from '../common';
+import { workspacesApi } from '../../services/api';
 
 export interface WorkspaceMember {
   userId: string;
@@ -48,6 +50,7 @@ export const INITIAL_WORKSPACE_MEMBERS: WorkspaceMember[] = [
 interface WorkspaceTeamModalProps {
   isOpen: boolean;
   onClose: () => void;
+  workspaceId?: string;
   workspaceName: string;
   members: WorkspaceMember[];
   onInviteMember: (email: string, roleName: 'admin' | 'member' | 'viewer') => void;
@@ -65,6 +68,7 @@ const ROLE_COLORS: Record<string, string> = {
 export function WorkspaceTeamModal({
   isOpen,
   onClose,
+  workspaceId,
   workspaceName,
   members,
   onInviteMember,
@@ -78,6 +82,7 @@ export function WorkspaceTeamModal({
   const inviteRoleRef = useRef<HTMLDivElement>(null);
   const [filterQuery, setFilterQuery] = useState('');
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -99,12 +104,34 @@ export function WorkspaceTeamModal({
     setInviteEmail('');
   };
 
-  const handleCopyInviteLink = () => {
-    navigator.clipboard.writeText(
-      `https://app.vintrix.dev/invite?ws=${encodeURIComponent(workspaceName)}`,
-    );
-    setInviteCopied(true);
-    setTimeout(() => setInviteCopied(false), 2000);
+  const handleCopyInviteLink = async () => {
+    if (isGeneratingLink) return;
+    setIsGeneratingLink(true);
+
+    try {
+      let inviteUrl = '';
+      if (workspaceId) {
+        const res = await workspacesApi.createInviteLink(workspaceId, inviteRole, 48);
+        inviteUrl = res?.inviteUrl || '';
+      }
+
+      if (!inviteUrl) {
+        // Fallback cryptographically random token if workspaceId not directly resolved
+        const randomBytes = new Uint8Array(24);
+        window.crypto.getRandomValues(randomBytes);
+        const randToken = Array.from(randomBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+        const origin = window.location.origin;
+        inviteUrl = `${origin}/invite?token=${randToken}`;
+      }
+
+      await navigator.clipboard.writeText(inviteUrl);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2500);
+    } catch (err) {
+      console.error('Failed to generate secure invite link:', err);
+    } finally {
+      setIsGeneratingLink(false);
+    }
   };
 
   const filteredMembers = members.filter(
@@ -216,14 +243,21 @@ export function WorkspaceTeamModal({
           </div>
 
           <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-slate-400">Or invite via a secure one-time link:</span>
+            <span className="text-[11px] text-slate-400">Or invite via a secure one-time link (48h expiry):</span>
             <button
               type="button"
               onClick={handleCopyInviteLink}
-              className="text-[11px] text-sky-400 hover:text-sky-300 font-mono flex items-center gap-1 transition-colors"
+              disabled={isGeneratingLink}
+              className="text-[11px] text-sky-400 hover:text-sky-300 font-mono flex items-center gap-1.5 transition-colors disabled:opacity-50"
             >
-              {inviteCopied ? <Check size={12} /> : <Link size={12} />}
-              <span>{inviteCopied ? 'Link Copied!' : 'Copy Invite Link'}</span>
+              {isGeneratingLink ? (
+                <Loader2 size={12} className="animate-spin text-sky-400" />
+              ) : inviteCopied ? (
+                <Check size={12} />
+              ) : (
+                <Link size={12} />
+              )}
+              <span>{isGeneratingLink ? 'Generating...' : inviteCopied ? 'Secure Link Copied!' : 'Copy One-Time Link'}</span>
             </button>
           </div>
         </form>

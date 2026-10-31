@@ -2230,7 +2230,8 @@ graph TD
       <WorkspaceTeamModal
         isOpen={isTeamModalOpen}
         onClose={() => setIsTeamModalOpen(false)}
-        workspaceName="vintrix-workspace"
+        workspaceId={currentWorkspaceId}
+        workspaceName={workspacesList.find((w) => w.id === currentWorkspaceId)?.name || 'vintrix-workspace'}
         members={membersList}
         onInviteMember={handleInviteMember}
         onUpdateRole={handleUpdateRole}
@@ -2402,6 +2403,20 @@ export default function App() {
         .then((res) => {
           if (res?.authenticated && res.user) {
             setCurrentUser(res.user);
+
+            // Check if there is an invite token in URL to consume
+            const inviteToken = urlParams.get('token');
+            if (window.location.pathname === '/invite' && inviteToken) {
+              workspacesApi.acceptInviteLink(inviteToken).then((resp) => {
+                if (resp?.success && resp.workspace) {
+                  localStorage.setItem('vintrix_active_workspace', resp.workspace.id);
+                  window.history.replaceState({}, document.title, '/dashboard');
+                  setCurrentPath('/dashboard');
+                }
+              }).catch((e) => {
+                console.error('Invite link invalid or expired:', e);
+              });
+            }
           }
         })
         .catch(() => {

@@ -90,6 +90,18 @@ export const workspacesApi = {
       `/workspaces/${workspaceId}/members/${userId}`,
       { method: 'DELETE' },
     ),
+
+  createInviteLink: (workspaceId: string, roleName: string = 'member', expiresInHours: number = 48) =>
+    request<{ success: boolean; token: string; inviteUrl: string; expiresAt: string; roleName: string }>(
+      `/workspaces/${workspaceId}/invites`,
+      { method: 'POST', body: JSON.stringify({ roleName, expiresInHours }) },
+    ),
+
+  acceptInviteLink: (token: string) =>
+    request<{ success: boolean; workspace: Workspace }>(
+      `/workspaces/invites/accept`,
+      { method: 'POST', body: JSON.stringify({ token }) },
+    ),
 };
 
 // ─── Source Types ─────────────────────────────────────────────────────────────

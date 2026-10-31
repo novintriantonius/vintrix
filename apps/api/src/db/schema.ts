@@ -39,6 +39,19 @@ export const workspaceMembers = pgTable('workspace_members', {
   invitedAt:   timestamp('invited_at').defaultNow().notNull(),
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.userId] })]);
 
+// ─── Workspace Invites (Cryptographically secure one-time invitations) ────────
+export const workspaceInvites = pgTable('workspace_invites', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  token:       text('token').notNull().unique(), // Secure random token
+  roleId:      uuid('role_id').notNull().references(() => roles.id),
+  createdBy:   uuid('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt:   timestamp('expires_at').notNull(),
+  usedAt:      timestamp('used_at'),             // Non-null once accepted
+  usedBy:      uuid('used_by').references(() => users.id),
+  createdAt:   timestamp('created_at').defaultNow().notNull(),
+});
+
 // ─── Code Sources (metadata only) ────────────────────────────────────────────
 export const codeSources = pgTable('code_sources', {
   id:          uuid('id').primaryKey().defaultRandom(),

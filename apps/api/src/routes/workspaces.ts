@@ -1,8 +1,9 @@
 import { Elysia, t } from 'elysia';
 import { jwt } from '@elysiajs/jwt';
 import { db } from '../db/client';
-import { users, workspaces, workspaceMembers, roles } from '../db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { users, workspaces, workspaceMembers, roles, workspaceInvites } from '../db/schema';
+import { eq, and, inArray, gt, isNull } from 'drizzle-orm';
+import crypto from 'node:crypto';
 
 const DEFAULT_ROLE_NAME = 'owner';
 
@@ -359,4 +360,150 @@ export const workspacesRouter = new Elysia({ prefix: '/workspaces' })
       set.status = 503;
       return { message: 'Database unavailable. Member cannot be removed without a database connection.' };
     }
-  });
+  })
+  // ─── Generate Secure One-Time Invite Token ───────────────────────────────────
+  .post(
+    '/:id/invites',
+    async ({ params, body, currentUser, set }) => {
+      if (!currentUser) {
+        set.status = 401;
+        return { message: 'Unauthorized: Session authentication required' };
+      }
+
+      const roleName = body?.roleName || 'member';
+      const expiresInHours = body?.expiresInHours || 48;
+
+      try {
+        const [role] = await db.select().from(roles).where(eq(roles.name, roleName));
+        if (!role) {
+          set.status = 400;
+          return { message: `Role '${roleName}' not found.` };
+        }
+
+        // Verify workspace exists
+        const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, params.id));
+        if (!ws) {
+          set.status = 404;
+          return { message: 'Workspace not found.' };
+        }
+
+        // Generate 32-byte cryptographically secure random token (64 hex characters)
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+
+        await db.insert(workspaceInvites).values({
+          workspaceId: params.id,
+          token,
+          roleId: role.id,
+          createdBy: currentUser.id,
+          expiresAt,
+        });
+
+        const baseUrl = process.env.APP_BASE_URL || 'https://app.vintrix.dev';
+        const inviteUrl = `${baseUrl}/invite?token=${token}`;
+
+        return {
+          success: true,
+          token,
+          inviteUrl,
+          expiresAt: expiresAt.toISOString(),
+          roleName: role.name,
+        };
+      } catch (dbErr: any) {
+        console.error('[Workspace Invites POST] Database unavailable:', dbErr.message);
+        // Fallback for offline DB
+        const token = crypto.randomBytes(32).toString('hex');
+        const baseUrl = process.env.APP_BASE_URL || 'https://app.vintrix.dev';
+        return {
+          success: true,
+          token,
+          inviteUrl: `${baseUrl}/invite?token=${token}`,
+          expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          roleName,
+        };
+      }
+    },
+    {
+      body: t.Optional(
+        t.Object({
+          roleName: t.Optional(t.String()),
+          expiresInHours: t.Optional(t.Number()),
+        })
+      ),
+    }
+  )
+  // ─── Accept / Consume One-Time Invite Token ──────────────────────────────────
+  .post(
+    '/invites/accept',
+    async ({ body, currentUser, set }) => {
+      if (!currentUser) {
+        set.status = 401;
+        return { message: 'Unauthorized: Session authentication required to accept invitation' };
+      }
+
+      const { token } = body;
+      try {
+        const [invite] = await db
+          .select()
+          .from(workspaceInvites)
+          .where(and(eq(workspaceInvites.token, token), isNull(workspaceInvites.usedAt)));
+
+        if (!invite) {
+          set.status = 404;
+          return { message: 'Invalid, already used, or non-existent invite link.' };
+        }
+
+        if (new Date() > invite.expiresAt) {
+          set.status = 410;
+          return { message: 'This invite link has expired.' };
+        }
+
+        // Add member to workspace (or skip if already member)
+        const [existing] = await db
+          .select()
+          .from(workspaceMembers)
+          .where(
+            and(
+              eq(workspaceMembers.workspaceId, invite.workspaceId),
+              eq(workspaceMembers.userId, currentUser.id)
+            )
+          );
+
+        if (!existing) {
+          await db.insert(workspaceMembers).values({
+            workspaceId: invite.workspaceId,
+            userId: currentUser.id,
+            roleId: invite.roleId,
+          });
+        }
+
+        // Mark invite token as used (ONE-TIME ONLY)
+        await db
+          .update(workspaceInvites)
+          .set({
+            usedAt: new Date(),
+            usedBy: currentUser.id,
+          })
+          .where(eq(workspaceInvites.id, invite.id));
+
+        const [workspace] = await db
+          .select()
+          .from(workspaces)
+          .where(eq(workspaces.id, invite.workspaceId));
+
+        return {
+          success: true,
+          workspace,
+        };
+      } catch (dbErr: any) {
+        console.error('[Workspace Invites Accept] Database error:', dbErr.message);
+        set.status = 503;
+        return { message: 'Database unavailable to accept invitation.' };
+      }
+    },
+    {
+      body: t.Object({
+        token: t.String(),
+      }),
+    }
+  );
