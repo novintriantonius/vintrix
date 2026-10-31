@@ -10,11 +10,16 @@ build/
 
 # Environment and sensitive keys
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 *.key
 *.id_rsa
+*.id_ed25519
+*.pfx
+*.p12
+credentials.json
+token.json
 
 # Workspace cache & XERJ data
 /data/
