@@ -11,11 +11,7 @@ import {
   FileText,
   CaretDown,
   Check,
-  Flame,
-  WarningOctagon,
   TreeStructure,
-  NavigationArrow,
-  ClockCounterClockwise,
 } from '@phosphor-icons/react';
 import type { NodeKind } from './CustomCodeNode';
 import type { LayoutDirection } from './layout';
@@ -28,17 +24,8 @@ interface GraphToolbarProps {
   selectedSource: string;
   onSourceSelect: (source: string) => void;
   availableSources: { id: string; label: string }[];
-  onlyHotspots?: boolean;
-  onToggleHotspots?: () => void;
-  onlyCycles?: boolean;
-  onToggleCycles?: () => void;
-  cyclesCount?: number;
   layoutDirection?: LayoutDirection;
   onSelectLayout?: (direction: LayoutDirection) => void;
-  isPathFinderActive?: boolean;
-  onTogglePathFinder?: () => void;
-  isHistoryReplayOpen?: boolean;
-  onToggleHistoryReplay?: () => void;
   nodeCount: number;
   totalNodes: number;
   onResetView: () => void;
@@ -63,17 +50,8 @@ export function GraphToolbar({
   selectedSource,
   onSourceSelect,
   availableSources,
-  onlyHotspots = false,
-  onToggleHotspots,
-  onlyCycles = false,
-  onToggleCycles,
-  cyclesCount = 0,
   layoutDirection = 'TB',
   onSelectLayout,
-  isPathFinderActive = false,
-  onTogglePathFinder,
-  isHistoryReplayOpen = false,
-  onToggleHistoryReplay,
   nodeCount,
   totalNodes,
   onResetView,
@@ -212,81 +190,6 @@ export function GraphToolbar({
             </button>
           );
         })}
-
-        {/* Hotspots Toggle Button */}
-        {onToggleHotspots && (
-          <button
-            type="button"
-            onClick={onToggleHotspots}
-            title={onlyHotspots ? 'Showing only high-coupling hotspots. Click to show all.' : 'Filter to high-coupling hotspot nodes'}
-            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-              onlyHotspots
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold shadow-sm'
-                : 'text-slate-400 hover:text-amber-300 hover:bg-white/[0.04]'
-            }`}
-          >
-            <Flame size={12} weight={onlyHotspots ? 'fill' : 'regular'} className={onlyHotspots ? 'text-amber-400' : 'text-slate-400'} />
-            <span className="hidden sm:inline">Hotspots</span>
-          </button>
-        )}
-
-        {/* Circular Dependency Cycles Toggle Button */}
-        {onToggleCycles && (
-          <button
-            type="button"
-            onClick={onToggleCycles}
-            title={onlyCycles ? 'Showing only circular dependency loops. Click to show all.' : 'Filter to circular dependency cycles'}
-            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-              onlyCycles
-                ? 'bg-rose-500/25 text-rose-300 border border-rose-500/50 font-semibold shadow-sm'
-                : 'text-slate-400 hover:text-rose-300 hover:bg-white/[0.04]'
-            }`}
-          >
-            <WarningOctagon size={12} weight={onlyCycles ? 'fill' : 'regular'} className={onlyCycles ? 'text-rose-400' : 'text-slate-400'} />
-            <span className="hidden sm:inline">Cycles</span>
-            {cyclesCount > 0 && (
-              <span className={`text-[9px] font-mono px-1 py-0.2 rounded-full font-bold ${
-                onlyCycles ? 'bg-rose-500/30 text-rose-200' : 'bg-rose-500/20 text-rose-400'
-              }`}>
-                {cyclesCount}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* Shortest Path Finder Toggle */}
-        {onTogglePathFinder && (
-          <button
-            type="button"
-            onClick={onTogglePathFinder}
-            title={isPathFinderActive ? 'Path Finder active. Click to close.' : 'Open Shortest Dependency Path Finder'}
-            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-              isPathFinderActive
-                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 font-semibold shadow-sm'
-                : 'text-slate-400 hover:text-emerald-300 hover:bg-white/[0.04]'
-            }`}
-          >
-            <NavigationArrow size={12} weight={isPathFinderActive ? 'fill' : 'regular'} className={isPathFinderActive ? 'text-emerald-400' : 'text-slate-400'} />
-            <span className="hidden sm:inline">Route</span>
-          </button>
-        )}
-
-        {/* History Replay Toggle */}
-        {onToggleHistoryReplay && (
-          <button
-            type="button"
-            onClick={onToggleHistoryReplay}
-            title={isHistoryReplayOpen ? 'Close Architecture History Replay' : 'Open Architecture History Replay'}
-            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-              isHistoryReplayOpen
-                ? 'bg-sky-500/25 text-sky-300 border border-sky-500/50 font-semibold shadow-sm'
-                : 'text-slate-400 hover:text-sky-300 hover:bg-white/[0.04]'
-            }`}
-          >
-            <ClockCounterClockwise size={12} weight={isHistoryReplayOpen ? 'bold' : 'regular'} className={isHistoryReplayOpen ? 'text-sky-400' : 'text-slate-400'} />
-            <span className="hidden sm:inline">Replay</span>
-          </button>
-        )}
       </div>
 
       <div className="h-3.5 w-px bg-white/[0.08] shrink-0" />

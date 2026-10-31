@@ -13,8 +13,6 @@ import {
   Flame,
   ArrowDown,
   ArrowUp,
-  WarningOctagon,
-  ArrowRight,
   LightbulbFilament,
   Wrench,
 } from '@phosphor-icons/react';
@@ -32,41 +30,14 @@ interface SidebarInspectorProps {
 export function SidebarInspector({
   selectedNode,
   onSelectNodeByPath,
-  onSelectNodeById,
   allNodes,
   isOpenMobile,
   onCloseMobile,
 }: SidebarInspectorProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'explorer' | 'hotspots' | 'cycles' | 'advisor' | 'security'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'hotspots' | 'advisor' | 'explorer' | 'security'>('details');
   const [copied, setCopied] = useState(false);
 
-  // Filter circular nodes
-  const circularNodes = useMemo(() => {
-    return allNodes.filter((n) => n.isCircular && n.circularCycle && n.circularCycle.length > 0);
-  }, [allNodes]);
-
-  // Unique detected cycle paths
-  const uniqueCycles = useMemo(() => {
-    const seen = new Set<string>();
-    const result: { cycle: string[]; nodes: CodeNodeData[] }[] = [];
-
-    circularNodes.forEach((node) => {
-      if (!node.circularCycle || node.circularCycle.length === 0) return;
-      // Normalize cycle representation to avoid duplicate listings of the same cycle
-      const cycleKey = [...node.circularCycle].sort().join('-');
-      if (!seen.has(cycleKey)) {
-        seen.add(cycleKey);
-        const resolvedNodes = node.circularCycle
-          .map((id) => allNodes.find((n) => (n as any).id === id || n.label === id))
-          .filter(Boolean) as CodeNodeData[];
-        result.push({ cycle: node.circularCycle, nodes: resolvedNodes });
-      }
-    });
-
-    return result;
-  }, [circularNodes, allNodes]);
-
-  // Sort nodes by hotspot coupling score descending
+  // Compute hotspots sorted by coupling score
   const hotspotNodes = useMemo(() => {
     return [...allNodes].sort((a, b) => {
       const scoreA = a.hotspotScore ?? (a.inDegree ?? 0) + (a.outDegree ?? 0);
@@ -111,76 +82,60 @@ export function SidebarInspector({
 
         {/* Tab Navigation Segmented Glass Pill */}
         <div className="px-4 py-3 border-b border-white/[0.08]">
-        <div className="flex bg-[#0d1422] p-1 rounded-lg border border-white/[0.06]">
+        <div className="flex bg-[#0d1422] p-1 rounded-lg border border-white/[0.06] overflow-x-auto scrollbar-none gap-1">
           <button
             onClick={() => setActiveTab('details')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all whitespace-nowrap ${
               activeTab === 'details'
                 ? 'text-white bg-white/10 shadow-sm font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Info size={12} />
+            <Info size={13} />
             AST
           </button>
           <button
             onClick={() => setActiveTab('hotspots')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all whitespace-nowrap ${
               activeTab === 'hotspots'
                 ? 'text-amber-300 bg-amber-500/20 shadow-sm font-semibold border border-amber-500/30'
                 : 'text-slate-400 hover:text-amber-300'
             }`}
           >
-            <Flame size={12} weight={activeTab === 'hotspots' ? 'fill' : 'regular'} className={activeTab === 'hotspots' ? 'text-amber-400' : ''} />
+            <Flame size={13} weight={activeTab === 'hotspots' ? 'fill' : 'regular'} className={activeTab === 'hotspots' ? 'text-amber-400' : ''} />
             Hotspots
           </button>
           <button
-            onClick={() => setActiveTab('cycles')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all relative ${
-              activeTab === 'cycles'
-                ? 'text-rose-300 bg-rose-500/20 shadow-sm font-semibold border border-rose-500/30'
-                : 'text-slate-400 hover:text-rose-300'
-            }`}
-          >
-            <WarningOctagon size={12} weight={activeTab === 'cycles' ? 'fill' : 'regular'} className={activeTab === 'cycles' ? 'text-rose-400' : ''} />
-            Cycles
-            {circularNodes.length > 0 && (
-              <span className="text-[8px] font-mono px-1 py-0.2 rounded-full bg-rose-500/30 text-rose-300 border border-rose-500/40">
-                {circularNodes.length}
-              </span>
-            )}
-          </button>
-          <button
             onClick={() => setActiveTab('advisor')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all whitespace-nowrap ${
               activeTab === 'advisor'
                 ? 'text-cyan-300 bg-cyan-500/20 shadow-sm font-semibold border border-cyan-500/30'
                 : 'text-slate-400 hover:text-cyan-300'
             }`}
           >
-            <LightbulbFilament size={12} weight={activeTab === 'advisor' ? 'fill' : 'regular'} className={activeTab === 'advisor' ? 'text-cyan-400' : ''} />
+            <LightbulbFilament size={13} weight={activeTab === 'advisor' ? 'fill' : 'regular'} className={activeTab === 'advisor' ? 'text-cyan-400' : ''} />
             Advisor
           </button>
           <button
             onClick={() => setActiveTab('explorer')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all whitespace-nowrap ${
               activeTab === 'explorer'
                 ? 'text-white bg-white/10 shadow-sm font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <FolderSimple size={12} />
+            <FolderSimple size={13} />
             Files
           </button>
           <button
             onClick={() => setActiveTab('security')}
-            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1 rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-medium flex items-center justify-center gap-1.5 rounded-md transition-all whitespace-nowrap ${
               activeTab === 'security'
                 ? 'text-white bg-white/10 shadow-sm font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <ShieldCheck size={12} />
+            <ShieldCheck size={13} />
             Security
           </button>
         </div>
@@ -351,109 +306,6 @@ export function SidebarInspector({
                         {score}
                       </span>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'cycles' && (
-          <div className="space-y-4">
-            <div className="p-3 bg-rose-950/20 border border-rose-500/20 rounded-xl space-y-1">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-400">
-                <WarningOctagon size={14} weight="fill" />
-                <span>Recursive Dependency Loops</span>
-              </div>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                Components entangled in circular dependencies degrade modularity, break tree-shaking, and risk deadlock during initialization.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 px-1">
-                Detected Cycles ({uniqueCycles.length})
-              </div>
-
-              {uniqueCycles.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-400 bg-[#0b1320]/40 rounded-xl border border-white/5">
-                  No circular dependencies detected. Codebase graph is clean.
-                </div>
-              ) : (
-                uniqueCycles.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 bg-[#0a101d] rounded-xl border border-rose-500/30 space-y-2.5 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                        Cycle Loop #{idx + 1} ({item.cycle.length - 1} Hops)
-                      </span>
-                    </div>
-
-                    {/* Step-by-step chain */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
-                      {item.cycle.map((nodeName, cIdx) => {
-                        const isLast = cIdx === item.cycle.length - 1;
-                        return (
-                          <div key={cIdx} className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (onSelectNodeById) onSelectNodeById(nodeName);
-                                const match = allNodes.find((n) => (n as any).id === nodeName || n.label === nodeName);
-                                if (match) onSelectNodeByPath(match.filePath);
-                              }}
-                              className={`px-2 py-1 rounded text-left transition-colors border ${
-                                isLast
-                                  ? 'bg-rose-500/20 text-rose-200 border-rose-500/40 font-semibold'
-                                  : 'bg-white/[0.04] text-slate-200 border-white/[0.08] hover:bg-white/[0.08]'
-                              }`}
-                              title={`Focus ${nodeName} on canvas`}
-                            >
-                              {nodeName}
-                            </button>
-                            {!isLast && <ArrowRight size={10} className="text-rose-400 shrink-0" />}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 px-1 mb-2">
-                All Affected Components ({circularNodes.length})
-              </div>
-              {circularNodes.map((n) => {
-                const isSelected = selectedNode?.filePath === n.filePath;
-                return (
-                  <button
-                    key={n.filePath}
-                    onClick={() => {
-                      if (onSelectNodeById && (n as any).id) onSelectNodeById((n as any).id);
-                      onSelectNodeByPath(n.filePath);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-xl border text-[11px] font-mono transition-all flex items-center justify-between ${
-                      isSelected
-                        ? 'bg-rose-500/15 border-rose-500/50 text-rose-200'
-                        : 'bg-[#0b1320]/40 border-rose-500/20 text-slate-300 hover:bg-[#0b1320] hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate pr-2">
-                      <WarningOctagon size={13} className="text-rose-400 shrink-0" weight="fill" />
-                      <div className="truncate">
-                        <span className="font-semibold">{n.label}</span>
-                        <div className="text-[10px] text-slate-500 font-mono truncate">
-                          {n.filePath}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
-                      CYCLE
-                    </span>
                   </button>
                 );
               })}

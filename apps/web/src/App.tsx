@@ -152,8 +152,6 @@ function WorkspaceContainer({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState<NodeKind | 'all'>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
-  const [showOnlyHotspots, setShowOnlyHotspots] = useState(false);
-  const [showOnlyCycles, setShowOnlyCycles] = useState(false);
   const [blastDepth, setBlastDepth] = useState<1 | 2 | 'all'>(1);
   const [layoutDirection, setLayoutDirection] = useState<LayoutDirection>('TB');
   const [isPathFinderActive, setIsPathFinderActive] = useState(false);
@@ -797,9 +795,6 @@ function WorkspaceContainer({
       const matchesKind = selectedKind === 'all' || data.kind === selectedKind;
       const matchesSource =
         selectedSource === 'all' || data.sourceName === selectedSource;
-      const matchesHotspot =
-        !showOnlyHotspots || (data.hotspotScore !== undefined && data.hotspotScore >= 4);
-      const matchesCycles = !showOnlyCycles || Boolean(data.isCircular);
       const matchesSearch =
         !searchQuery ||
         data.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -808,9 +803,9 @@ function WorkspaceContainer({
         (data.sourceName && data.sourceName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (data.tags && data.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
 
-      return matchesKind && matchesSource && matchesHotspot && matchesCycles && matchesSearch;
+      return matchesKind && matchesSource && matchesSearch;
     });
-  }, [enrichedNodes, selectedKind, selectedSource, showOnlyHotspots, showOnlyCycles, searchQuery]);
+  }, [enrichedNodes, selectedKind, selectedSource, searchQuery]);
 
   // Compute blast radius: sets of upstream callers and downstream callees with multi-hop support
   const blastRadius = useMemo(() => {
@@ -1012,11 +1007,6 @@ function WorkspaceContainer({
     });
   }, [filteredNodes, selectedNodeId, blastRadius, isPathFinderActive, pathStartNodeId, pathTargetNodeId, activePath]);
 
-  // Count nodes involved in circular dependency cycles
-  const totalCyclesCount = useMemo(() => {
-    return enrichedNodes.filter((n) => (n.data as unknown as CodeNodeData)?.isCircular).length;
-  }, [enrichedNodes]);
-
   // Enriched edges with animated glowing style for blast radius connections and circular warnings
   const displayEdges = useMemo(() => {
     // History Replay edge filtering
@@ -1064,13 +1054,8 @@ function WorkspaceContainer({
       }
     });
 
-    // If filtering by cycles only, also filter edges to keep only circular edges or edges between visible cycle nodes
-    const candidateEdges = showOnlyCycles
-      ? edges.filter((e) => {
-          const isVisible = filteredNodes.some((n) => n.id === e.source) && filteredNodes.some((n) => n.id === e.target);
-          return circularEdgeSet.has(e.id) || isVisible;
-        })
-      : edges;
+    // Enriched edges
+    const candidateEdges = edges;
 
     // Path Finder active state: highlight only the edges on the shortest route
     if (isPathFinderActive && pathStartNodeId && pathTargetNodeId && activePath) {
@@ -1149,7 +1134,7 @@ function WorkspaceContainer({
 
       return edge;
     });
-  }, [edges, selectedNodeId, blastRadius, enrichedNodes, showOnlyCycles, filteredNodes, isPathFinderActive, pathStartNodeId, pathTargetNodeId, activePath, isHistoryReplayOpen, historySnapshots, historyIndex]);
+  }, [edges, selectedNodeId, blastRadius, enrichedNodes, filteredNodes, isPathFinderActive, pathStartNodeId, pathTargetNodeId, activePath, isHistoryReplayOpen, historySnapshots, historyIndex]);
 
   const allNodeDataList = useMemo(() => {
     return enrichedNodes.map((n) => ({
@@ -1838,26 +1823,8 @@ graph TD
                 selectedSource={selectedSource}
                 onSourceSelect={setSelectedSource}
                 availableSources={availableSources}
-                onlyHotspots={showOnlyHotspots}
-                onToggleHotspots={() => setShowOnlyHotspots((prev) => !prev)}
-                onlyCycles={showOnlyCycles}
-                onToggleCycles={() => setShowOnlyCycles((prev) => !prev)}
-                cyclesCount={totalCyclesCount}
                 layoutDirection={layoutDirection}
                 onSelectLayout={handleSelectLayout}
-                isPathFinderActive={isPathFinderActive}
-                onTogglePathFinder={() => {
-                  setIsPathFinderActive((prev) => {
-                    const next = !prev;
-                    if (!next) {
-                      setPathStartNodeId('');
-                      setPathTargetNodeId('');
-                    }
-                    return next;
-                  });
-                }}
-                isHistoryReplayOpen={isHistoryReplayOpen}
-                onToggleHistoryReplay={() => setIsHistoryReplayOpen((prev) => !prev)}
                 nodeCount={filteredNodes.length}
                 totalNodes={nodes.length}
                 onResetView={() => fitView({ padding: 0.2, duration: 600 })}

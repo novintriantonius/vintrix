@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowRight, GitBranch } from '@phosphor-icons/react';
 import { LogoLockup } from '../common';
-import heroVisual from '../../assets/landing/hero.jpg';
+import heroVisual from '../../assets/landing/hero.png';
 
 interface NavProps {
   onOpenApp?: () => void;
