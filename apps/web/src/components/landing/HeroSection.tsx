@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowRight, GitBranch } from '@phosphor-icons/react';
 import { LogoLockup } from '../common';
+import heroVisual from '../../assets/landing/hero.jpg';
 
 interface NavProps {
   onOpenApp?: () => void;
@@ -150,7 +151,7 @@ export function Hero({ onOpenApp }: HeroProps) {
           }}
         >
           <img
-            src={`https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20mode%20developer%20tool%20interface%20showing%20an%20interactive%20code%20dependency%20graph%20with%20glowing%20cyan%20and%20sky%20blue%20nodes%20connected%20by%20thin%20luminous%20edges%20floating%20over%20a%20deep%20navy%20grid%20revealing%20module%20relationships%20and%20call%20chains%20cinematic%20soft%20bloom%20high%20detail%20ui%20screenshot&image_size=landscape_16_9`}
+            src={heroVisual}
             alt="Vintrix interactive codebase knowledge graph"
             className="w-full block"
             loading="eager"

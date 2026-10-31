@@ -8,34 +8,39 @@ import {
   Plugs,
 } from '@phosphor-icons/react';
 import { LogoMark } from '../common';
+import featureGraph from '../../assets/landing/feature-graph.jpg';
+import featureSearch from '../../assets/landing/feature-search.jpg';
+import featureChat from '../../assets/landing/feature-chat.jpg';
+import featureSources from '../../assets/landing/feature-sources.jpg';
+import heroFallback from '../../assets/hero.png';
 
 const features = [
   {
     icon: Tree,
     title: 'Visual Knowledge Graph',
     desc: 'Navigate your codebase as an interactive node graph. See module relationships, call chains, and architecture at a glance.',
-    img: `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=interactive%20knowledge%20graph%20canvas%20close%20up%20luminous%20sky%20blue%20nodes%20linked%20by%20thin%20glowing%20cyan%20edges%20deep%20midnight%20navy%20background%20blurred%20code%20labels%20soft%20bloom%20dark%20developer%20ui%20high%20detail&image_size=landscape_4_3`,
+    img: featureGraph,
     wide: true,
   },
   {
     icon: MagnifyingGlass,
     title: 'Hybrid Search',
     desc: 'BM25 lexical and vector semantic search via XERJ binary. Zero Python runtime required.',
-    img: `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20command%20palette%20search%20overlay%20ranked%20code%20snippet%20results%20highlighted%20matching%20tokens%20sky%20blue%20accent%20bars%20monospaced%20text%20deep%20navy%20background%20crisp%20developer%20tool%20interface%20shallow%20depth%20of%20field&image_size=portrait_4_3`,
+    img: featureSearch,
     wide: false,
   },
   {
     icon: ChatCircleText,
     title: 'Context-Aware Chat',
     desc: 'Ask questions about any workspace using any OpenAI-compatible model. Works with local Ollama or cloud APIs.',
-    img: `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20ai%20chat%20panel%20about%20software%20architecture%20message%20bubbles%20with%20code%20chips%20and%20file%20references%20subtle%20sky%20blue%20glow%20deep%20navy%20surface%20minimal%20developer%20interface%20soft%20lighting&image_size=portrait_4_3`,
+    img: featureChat,
     wide: false,
   },
   {
     icon: FolderOpen,
     title: 'Multi-Source Indexing',
     desc: 'Connect Git repos or SSH servers. Browse remote directories and select paths for indexing across multiple workspaces.',
-    img: `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20file%20explorer%20tree%20showing%20remote%20ssh%20server%20directories%20and%20git%20repository%20branches%20selected%20for%20indexing%20sky%20blue%20checkmarks%20deep%20navy%20panels%20monospaced%20paths%20clean%20developer%20settings%20ui&image_size=landscape_4_3`,
+    img: featureSources,
     wide: true,
   },
 ];
@@ -223,9 +228,9 @@ export function OpenSourceSection() {
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
         >
           <img
-            src={`https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=self%20hosted%20server%20rack%20in%20a%20dark%20data%20center%20lit%20by%20cool%20sky%20blue%20and%20cyan%20light%20glowing%20network%20status%20leds%20minimal%20cinematic%20wide%20shot%20deep%20navy%20shadows%20professional%20infrastructure%20photography&image_size=landscape_4_3`}
+            src={heroFallback}
             alt="Secure self-hosted Vintrix deployment"
-            className="rounded-xl border border-slate-800 w-full"
+            className="rounded-xl border border-slate-800 w-full object-cover max-h-[380px]"
             loading="lazy"
           />
         </motion.div>
