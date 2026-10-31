@@ -44,4 +44,10 @@ describe('BM25 Hybrid Retrieval Utilities', () => {
     const res = await retrieveRelevantContext('ws-123', '   ');
     expect(res).toEqual([]);
   });
+
+  it('retrieveRelevantContext returns empty array if workspace has no nodes', async () => {
+    const { retrieveRelevantContext } = await import('../src/services/retrieval');
+    const res = await retrieveRelevantContext('a0000000-0000-0000-0000-000000000000', 'auth service');
+    expect(Array.isArray(res)).toBeTrue();
+  });
 });

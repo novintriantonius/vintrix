@@ -48,4 +48,9 @@ describe('Git Service (Read-Only Enforcement)', () => {
     expect(result.success).toBeFalse();
     expect(result.error).toBeDefined();
   });
+
+  it('rejects unsupported or arbitrary subcommands', () => {
+    expect(() => assertReadOnlyGitArgs(['daemon'])).toThrow(/Unsupported or non-read-only/);
+    expect(() => assertReadOnlyGitArgs(['bundle'])).toThrow(/Unsupported or non-read-only/);
+  });
 });
