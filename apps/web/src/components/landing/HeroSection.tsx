@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { ArrowRight, GitBranch, Graph } from '@phosphor-icons/react';
+import { ArrowRight, GitBranch } from '@phosphor-icons/react';
+import { LogoLockup } from '../common';
 
 interface NavProps {
   onOpenApp?: () => void;
@@ -16,9 +17,8 @@ export function Nav({ onOpenApp, onOpenAuth }: NavProps) {
       className="fixed top-0 inset-x-0 z-50 h-16 flex items-center"
     >
       <div className="w-full max-w-7xl mx-auto px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Graph size={22} weight="fill" className="text-sky-400" />
-          <span className="font-semibold text-slate-100 tracking-tight text-sm">vintrix</span>
+        <div className="flex items-center">
+          <LogoLockup size={22} textClassName="text-slate-100 text-sm" />
         </div>
         <nav className="hidden md:flex items-center gap-6 text-sm text-slate-400">
           <a href="#features" className="hover:text-slate-200 transition-colors duration-150">Features</a>
@@ -150,8 +150,8 @@ export function Hero({ onOpenApp }: HeroProps) {
           }}
         >
           <img
-            src={`https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20mode%20interactive%20code%20graph%20UI%20showing%20interconnected%20nodes%20representing%20modules%20services%20and%20classes%20with%20glowing%20lines%20on%20deep%20dark%20background%20developer%20tool%20aesthetic%20blue%20teal%20accent%20graph%20visualization%20knowledge%20graph%20codebase%20explorer&image_size=landscape_16_9`}
-            alt="Vintrix knowledge graph UI"
+            src={`https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20mode%20developer%20tool%20interface%20showing%20an%20interactive%20code%20dependency%20graph%20with%20glowing%20cyan%20and%20sky%20blue%20nodes%20connected%20by%20thin%20luminous%20edges%20floating%20over%20a%20deep%20navy%20grid%20revealing%20module%20relationships%20and%20call%20chains%20cinematic%20soft%20bloom%20high%20detail%20ui%20screenshot&image_size=landscape_16_9`}
+            alt="Vintrix interactive codebase knowledge graph"
             className="w-full block"
             loading="eager"
           />

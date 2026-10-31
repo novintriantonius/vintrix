@@ -13,7 +13,7 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Layers, Box, GitFork, MessageSquareCode, Share2, Info, LogIn, LogOut, ChevronDown, Plus, MoreHorizontal, Users, Search, RefreshCw } from 'lucide-react';
+import { Layers, GitFork, MessageSquareCode, Share2, Info, LogIn, LogOut, ChevronDown, Plus, MoreHorizontal, Users, Search, RefreshCw } from 'lucide-react';
 import { Nav, Hero } from './components/landing/HeroSection';
 import {
   FeaturesSection,
@@ -40,7 +40,7 @@ import {
 } from './components/workspace/WorkspaceTeamModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { Modal } from './components/common/Modal';
-import { ToastContainer, CommandPalette, type ToastMessage } from './components/common';
+import { ToastContainer, CommandPalette, LogoMark, type ToastMessage } from './components/common';
 import { sourcesApi, workspacesApi, graphApi, authApi, type WorkspaceMemberAPI, type AuthUser, type Workspace } from './services/api';
 
 const nodeTypes = {
@@ -1525,9 +1525,7 @@ graph TD
             className="flex items-center gap-1.5 font-semibold text-xs text-slate-100 hover:text-white transition-colors p-1 -ml-1 rounded-lg hover:bg-white/[0.04] shrink-0 group"
             title="Vintrix - Back to Landing"
           >
-            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center shadow-sm shadow-sky-500/20 group-hover:scale-105 transition-transform shrink-0">
-              <Box size={14} className="text-slate-950" />
-            </div>
+            <LogoMark size={22} className="shrink-0 group-hover:scale-105 transition-transform" />
             <span className="font-bold text-sm tracking-tight text-white">Vintrix</span>
           </button>
           <div className="relative">
