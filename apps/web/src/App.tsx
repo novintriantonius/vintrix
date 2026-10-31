@@ -13,7 +13,7 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Layers, Box, GitFork, MessageSquareCode, Share2, Info, LogIn, LogOut, ChevronDown, Plus, MoreHorizontal, Users, Search } from 'lucide-react';
+import { Layers, Box, GitFork, MessageSquareCode, Share2, Info, LogIn, LogOut, ChevronDown, Plus, MoreHorizontal, Users, Search, RefreshCw } from 'lucide-react';
 import { Nav, Hero } from './components/landing/HeroSection';
 import {
   FeaturesSection,
@@ -53,10 +53,13 @@ function sourceApiToItem(s: {
   type: string;
   isIndexed: boolean;
   lastIndexAt: string | null;
+  totalFilesIndexed?: number;
+  totalNodesCount?: number;
   host?: string | null;
   port?: number | null;
   repoUrl?: string | null;
   branch?: string | null;
+  indexPaths?: string[];
 }): CodeSourceItem {
   const isGit = s.type === 'git';
   return {
@@ -65,10 +68,11 @@ function sourceApiToItem(s: {
     type: s.type as 'git' | 'ssh',
     location: isGit ? (s.repoUrl ?? 'unknown') : `${s.host ?? 'unknown'}`,
     branchOrPort: isGit ? (s.branch ?? 'main') : `Port ${s.port ?? 22}`,
-    indexPaths: [],
-    status: s.isIndexed ? 'synced' : 'indexing',
+    indexPaths: s.indexPaths ?? [],
+    status: 'synced',
     lastSyncedAt: s.lastIndexAt ? new Date(s.lastIndexAt).toLocaleString() : 'Never',
-    nodesCount: 0,
+    nodesCount: s.totalNodesCount ?? 0,
+    filesIndexedCount: s.totalFilesIndexed ?? 0,
   };
 }
 
@@ -95,12 +99,25 @@ function WorkspaceContainer({
 }) {
   const [workspaceTab, setWorkspaceTab] = useState<'graph' | 'chat'>('graph');
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(() => {
-    return localStorage.getItem('vintrix_active_workspace') || '';
+    const saved = localStorage.getItem('vintrix_active_workspace') || '';
+    // Discard any old fake workspace ID from prior local storage
+    if (saved.startsWith('ws-')) {
+      localStorage.removeItem('vintrix_active_workspace');
+      return '';
+    }
+    return saved;
   });
   const [workspacesList, setWorkspacesList] = useState<Workspace[]>(() => {
     try {
       const stored = localStorage.getItem('vintrix_workspaces');
-      return stored ? JSON.parse(stored) : [];
+      if (!stored) return [];
+      const parsed: Workspace[] = JSON.parse(stored);
+      // Filter out old fake workspace IDs
+      const legitimate = parsed.filter((w) => !w.id.startsWith('ws-'));
+      if (legitimate.length !== parsed.length) {
+        localStorage.setItem('vintrix_workspaces', JSON.stringify(legitimate));
+      }
+      return legitimate;
     } catch {
       return [];
     }
@@ -149,17 +166,20 @@ function WorkspaceContainer({
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [sourcesList, setSourcesList] = useState<CodeSourceItem[]>([]);
+  const [reindexProgress, setReindexProgress] = useState<
+    Record<string, { current: number; total: number; percent: number; currentFileName?: string }>
+  >({});
   const [membersList, setMembersList] = useState<WorkspaceMember[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const addToast = (toast: Omit<ToastMessage, 'id'>) => {
+  const addToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     setToasts((prev) => [...prev, { ...toast, id }]);
-  };
+  }, []);
 
-  const handleDismissToast = (id: string) => {
+  const handleDismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
   // Global shortcut: Cmd+K / Ctrl+K to toggle Command Palette
   useEffect(() => {
@@ -191,92 +211,47 @@ function WorkspaceContainer({
             // pass
           }
           // If current selection is not valid or empty, switch to the first legitimate workspace
-          if (!data.some((w) => w.id === currentWorkspaceId)) {
-            setCurrentWorkspaceId(data[0].id);
-            localStorage.setItem('vintrix_active_workspace', data[0].id);
-          }
-        } else {
-          // If user has cached workspaces, do not overwrite with empty
-          const stored = localStorage.getItem('vintrix_workspaces');
-          if (stored) {
-            try {
-              const parsed: Workspace[] = JSON.parse(stored);
-              if (parsed.length > 0) {
-                setWorkspacesList(parsed);
-                if (!parsed.some((w) => w.id === currentWorkspaceId)) {
-                  setCurrentWorkspaceId(parsed[0].id);
-                  localStorage.setItem('vintrix_active_workspace', parsed[0].id);
-                }
-                return;
-              }
-            } catch {
-              // pass
+          setCurrentWorkspaceId((prev) => {
+            if (!data.some((w) => w.id === prev)) {
+              localStorage.setItem('vintrix_active_workspace', data[0].id);
+              return data[0].id;
             }
-          }
-
-          // If user has zero workspaces, auto-create their personal default workspace
-          const defaultWsName = user?.displayName ? `${user.displayName.split(' ')[0]}'s Workspace` : 'My Workspace';
-          const localWs: Workspace = {
-            id: `ws-${Date.now()}`,
-            name: defaultWsName,
-            description: 'Personal codebase intelligence workspace',
-            ownerId: user?.id || 'user-default',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          const list = [localWs];
-          setWorkspacesList(list);
-          setCurrentWorkspaceId(localWs.id);
-          localStorage.setItem('vintrix_workspaces', JSON.stringify(list));
-          localStorage.setItem('vintrix_active_workspace', localWs.id);
+            return prev;
+          });
+        } else {
+          setWorkspacesList([]);
         }
       })
       .catch((err) => {
         console.warn('[Workspaces List] Failed to fetch member workspaces:', err);
-        // Fallback: check cached workspaces first
-        const stored = localStorage.getItem('vintrix_workspaces');
-        if (stored) {
-          try {
-            const parsed: Workspace[] = JSON.parse(stored);
-            if (parsed.length > 0) {
-              setWorkspacesList(parsed);
-              if (!parsed.some((w) => w.id === currentWorkspaceId)) {
-                setCurrentWorkspaceId(parsed[0].id);
-                localStorage.setItem('vintrix_active_workspace', parsed[0].id);
-              }
-              return;
-            }
-          } catch {
-            // pass
-          }
-        }
-
-        // Fallback auto-provision
-        const defaultWsName = user?.displayName ? `${user.displayName.split(' ')[0]}'s Workspace` : 'My Workspace';
-        const localWs: Workspace = {
-          id: `ws-${Date.now()}`,
-          name: defaultWsName,
-          description: 'Personal codebase intelligence workspace',
-          ownerId: user?.id || 'user-default',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        const list = [localWs];
-        setWorkspacesList(list);
-        setCurrentWorkspaceId(localWs.id);
-        localStorage.setItem('vintrix_workspaces', JSON.stringify(list));
-        localStorage.setItem('vintrix_active_workspace', localWs.id);
+        addToast({
+          type: 'error',
+          title: 'Failed to Load Workspaces',
+          description: err.message || 'Database offline. Cannot load workspace list.',
+        });
       });
   }, [user]);
 
   // Load sources, members, and graph whenever active workspace changes
   useEffect(() => {
+    // Guard: Only fetch workspace-scoped data if a valid workspace ID is selected
+    if (!currentWorkspaceId || currentWorkspaceId.startsWith('ws-')) {
+      setSourcesList([]);
+      setMembersList([]);
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+
     // 1. Load local cached sources first to ensure immediate display
     const localKey = `vintrix_sources_${currentWorkspaceId}`;
     try {
       const stored = localStorage.getItem(localKey);
       if (stored) {
-        setSourcesList(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        // Reset any stale 'indexing' status from previous session to 'synced'
+        const reset = parsed.map((s: any) => s.status === 'indexing' ? { ...s, status: 'synced' } : s);
+        setSourcesList(reset);
       } else {
         setSourcesList([]);
       }
@@ -291,10 +266,16 @@ function WorkspaceContainer({
           const mapped = data.map(sourceApiToItem);
           setSourcesList(mapped);
           localStorage.setItem(localKey, JSON.stringify(mapped));
+        } else {
+          setSourcesList([]);
         }
       })
-      .catch(() => {
-        // Fallback already loaded from localStorage
+      .catch((err) => {
+        addToast({
+          type: 'error',
+          title: 'Failed to Load Sources',
+          description: err.message || 'Database offline. Cannot load code sources.',
+        });
       });
 
     workspacesApi
@@ -304,52 +285,74 @@ function WorkspaceContainer({
           setMembersList(data.map(memberApiToLocal));
         }
       })
-      .catch(() => {
-        setMembersList([
-          {
-            userId: user?.id || 'user-1',
-            name: user?.displayName || 'Workspace Admin',
-            email: user?.email || 'admin@vintrix.ai',
-            roleName: 'admin',
-            invitedAt: 'Workspace Owner',
-          },
-        ]);
+      .catch((err) => {
+        addToast({
+          type: 'error',
+          title: 'Failed to Load Members',
+          description: err.message || 'Database offline. Cannot load workspace members.',
+        });
       });
 
-    if (!currentWorkspaceId) {
-      setNodes([]);
-      setEdges([]);
-      return;
-    }
-
-    // 1. Try loading cached nodes and edges for this workspace
+    // 1. Immediately reset or load cached nodes and edges for this workspace
     try {
       const cachedNodes = localStorage.getItem(`vintrix_nodes_${currentWorkspaceId}`);
       const cachedEdges = localStorage.getItem(`vintrix_edges_${currentWorkspaceId}`);
       if (cachedNodes) {
-        setNodes(JSON.parse(cachedNodes));
+        const parsedNodes: Node[] = JSON.parse(cachedNodes);
+        const seenNodeIds = new Set<string>();
+        const uniqueNodes = parsedNodes.filter((n) => {
+          if (seenNodeIds.has(n.id)) return false;
+          seenNodeIds.add(n.id);
+          return true;
+        });
+        setNodes(uniqueNodes);
+      } else {
+        // Workspace has no cached graph — clear the canvas so old workspace graph doesn't linger
+        setNodes([]);
       }
       if (cachedEdges) {
-        setEdges(JSON.parse(cachedEdges));
+        const parsedEdges: Edge[] = JSON.parse(cachedEdges);
+        const seenEdgeIds = new Set<string>();
+        const uniqueEdges = parsedEdges.filter((e) => {
+          if (seenEdgeIds.has(e.id)) return false;
+          seenEdgeIds.add(e.id);
+          return true;
+        });
+        setEdges(uniqueEdges);
+      } else {
+        setEdges([]);
       }
     } catch {
-      // pass
+      setNodes([]);
+      setEdges([]);
     }
 
     graphApi
       .getWorkspaceGraph<CodeNodeData>(currentWorkspaceId)
       .then((res) => {
         if (res && res.nodes && res.nodes.length > 0) {
-          setNodes(res.nodes as unknown as Node[]);
+          const seenNodeIds = new Set<string>();
+          const uniqueNodes = (res.nodes as unknown as Node[]).filter((n) => {
+            if (seenNodeIds.has(n.id)) return false;
+            seenNodeIds.add(n.id);
+            return true;
+          });
+          setNodes(uniqueNodes);
           try {
-            localStorage.setItem(`vintrix_nodes_${currentWorkspaceId}`, JSON.stringify(res.nodes));
+            localStorage.setItem(`vintrix_nodes_${currentWorkspaceId}`, JSON.stringify(uniqueNodes));
           } catch {
             // pass
           }
           if (res.edges && res.edges.length > 0) {
-            setEdges(res.edges as unknown as Edge[]);
+            const seenEdgeIds = new Set<string>();
+            const uniqueEdges = (res.edges as unknown as Edge[]).filter((e) => {
+              if (seenEdgeIds.has(e.id)) return false;
+              seenEdgeIds.add(e.id);
+              return true;
+            });
+            setEdges(uniqueEdges);
             try {
-              localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(res.edges));
+              localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(uniqueEdges));
             } catch {
               // pass
             }
@@ -358,35 +361,118 @@ function WorkspaceContainer({
           }
         }
       })
-      .catch(() => {
-        // Keep cached nodes if graph API fails
+      .catch((err) => {
+        addToast({
+          type: 'error',
+          title: 'Failed to Load Knowledge Graph',
+          description: err.message || 'Database offline. Cannot load knowledge graph.',
+        });
       });
 
     // Subscribe to live Server-Sent Events (SSE) for background re-indexing & Git webhooks
     const unsubscribe = sourcesApi.subscribeEvents(currentWorkspaceId, (evt) => {
       if (evt.type === 'started') {
+        if (evt.sourceId) {
+          setSourcesList((prev) =>
+            prev.map((s) => (s.id === evt.sourceId ? { ...s, status: 'indexing' } : s))
+          );
+        }
         addToast({
           type: 'info',
           title: 'Codebase Re-indexing Started',
           description: evt.message || `Started analyzing ${evt.sourceName || 'source'}...`,
         });
+      } else if (evt.type === 'progress') {
+        if (evt.sourceId && evt.currentFileIndex !== undefined && evt.totalFiles !== undefined) {
+          // Set progress for both exact sourceId and fallback lookup
+          setReindexProgress((prev) => ({
+            ...prev,
+            [evt.sourceId]: {
+              current: evt.currentFileIndex,
+              total: evt.totalFiles,
+              percent: evt.progressPercent ?? Math.round((evt.currentFileIndex / Math.max(1, evt.totalFiles)) * 100),
+              currentFileName: evt.currentFileName,
+            },
+          }));
+        }
       } else if (evt.type === 'completed') {
+        // Delay clearing reindexProgress slightly so user sees 100% completion before disappearing
+        setTimeout(() => {
+          setReindexProgress((prev) => {
+            const next = { ...prev };
+            if (evt.sourceId) delete next[evt.sourceId];
+            return next;
+          });
+        }, 1200);
+
+        if (evt.sourceId) {
+          setSourcesList((prev) => {
+            const updated = prev.map((s) =>
+              s.id === evt.sourceId
+                ? {
+                    ...s,
+                    status: 'synced' as const,
+                    lastSyncedAt: 'Just now',
+                    nodesCount: evt.nodesScanned ?? s.nodesCount,
+                    filesIndexedCount: evt.totalFilesIndexed ?? s.filesIndexedCount,
+                  }
+                : s
+            );
+            // Persist updated sources so they survive page refresh
+            try {
+              localStorage.setItem(`vintrix_sources_${currentWorkspaceId}`, JSON.stringify(updated));
+            } catch { /* pass */ }
+            return updated;
+          });
+        }
         addToast({
           type: 'success',
           title: 'AST Re-indexing Finished',
           description: evt.message || `Scanned ${evt.nodesScanned} nodes & ${evt.edgesScanned} relationships.`,
         });
-        // Silently reload sources & knowledge graph to show fresh nodes live
-        sourcesApi.list(currentWorkspaceId).then((data) => {
-          if (data) setSourcesList(data.map(sourceApiToItem));
-        });
-        graphApi.getWorkspaceGraph<CodeNodeData>(currentWorkspaceId).then((res) => {
-          if (res && res.nodes && res.nodes.length > 0) {
-            setNodes(res.nodes as unknown as Node[]);
-            if (res.edges) setEdges(res.edges as unknown as Edge[]);
-          }
-        });
+
+        // If the completed event carries full graph payload, render directly
+        if (evt.graphNodes && evt.graphNodes.length > 0) {
+          setNodes(evt.graphNodes);
+          if (evt.graphEdges) setEdges(evt.graphEdges);
+          try {
+            localStorage.setItem(`vintrix_nodes_${currentWorkspaceId}`, JSON.stringify(evt.graphNodes));
+            localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(evt.graphEdges ?? []));
+          } catch { /* pass */ }
+        } else {
+          // Fetch full graph from backend
+          sourcesApi.list(currentWorkspaceId).then((data) => {
+            if (data && data.length > 0) setSourcesList(data.map(sourceApiToItem));
+          }).catch((err) => {
+            console.error('[sourcesApi.list] post-reindex error:', err);
+          });
+          graphApi.getWorkspaceGraph<CodeNodeData>(currentWorkspaceId).then((res) => {
+            if (res && res.nodes && res.nodes.length > 0) {
+              const uniqueNodes = (res.nodes as unknown as Node[]).filter(
+                (n, i, arr) => arr.findIndex((x) => x.id === n.id) === i
+              );
+              setNodes(uniqueNodes);
+              if (res.edges) setEdges(res.edges as unknown as Edge[]);
+              try {
+                localStorage.setItem(`vintrix_nodes_${currentWorkspaceId}`, JSON.stringify(uniqueNodes));
+                localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(res.edges ?? []));
+              } catch { /* pass */ }
+            }
+          }).catch((err) => {
+            console.error('[graphApi.getWorkspaceGraph] post-reindex error:', err);
+          });
+        }
       } else if (evt.type === 'error') {
+        if (evt.sourceId) {
+          setReindexProgress((prev) => {
+            const next = { ...prev };
+            delete next[evt.sourceId];
+            return next;
+          });
+          setSourcesList((prev) =>
+            prev.map((s) => (s.id === evt.sourceId ? { ...s, status: 'error' } : s))
+          );
+        }
         addToast({
           type: 'error',
           title: 'Re-indexing Issue',
@@ -429,26 +515,13 @@ function WorkspaceContainer({
         title: 'Workspace Created',
         description: `Switched to newly created workspace "${created.name}".`,
       });
-    } catch {
-      // Instant Local storage fallback if server DB is unreachable
-      const localWorkspace: Workspace = {
-        id: `ws-${Date.now()}`,
-        name: newWorkspaceName.trim(),
-        description: newWorkspaceDesc.trim() || null,
-        ownerId: user?.id || '00000000-0000-0000-0000-000000000001',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setWorkspacesList((prev) => [localWorkspace, ...prev]);
-      setCurrentWorkspaceId(localWorkspace.id);
-      localStorage.setItem('vintrix_active_workspace', localWorkspace.id);
-      setIsCreateWorkspaceOpen(false);
-      setNewWorkspaceName('');
-      setNewWorkspaceDesc('');
+    } catch (err: any) {
+      // Do not store fake in-memory workspace if DB is offline. Show explicit failure notification.
+      console.error('[Create Workspace] Error:', err.message);
       addToast({
-        type: 'success',
-        title: 'Workspace Created (Local)',
-        description: `Switched to workspace "${localWorkspace.name}".`,
+        type: 'error',
+        title: 'Failed to Create Workspace',
+        description: err.message || 'Database offline or inaccessible. Workspace creation failed.',
       });
     } finally {
       setIsCreatingWorkspace(false);
@@ -461,54 +534,58 @@ function WorkspaceContainer({
       if (res.member) {
         setMembersList((prev) => [...prev, memberApiToLocal(res.member)]);
       }
-    } catch {
-      // Local optimistic update
-      const newMember: WorkspaceMember = {
-        userId: `user-${Date.now()}`,
-        name: email.split('@')[0],
-        email,
-        roleName,
-        invitedAt: 'Just now',
-      };
-      setMembersList((prev) => [...prev, newMember]);
+      addToast({
+        type: 'success',
+        title: 'Invitation Sent',
+        description: `Successfully invited ${email} as ${roleName.toUpperCase()}.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to Invite Member',
+        description: err.message || 'Database offline. Member could not be invited.',
+      });
     }
-    addToast({
-      type: 'success',
-      title: 'Invitation Sent',
-      description: `Invited ${email} as ${roleName.toUpperCase()} to the workspace.`,
-    });
   };
 
   const handleUpdateRole = async (userId: string, newRole: 'admin' | 'member' | 'viewer') => {
     const member = membersList.find((m) => m.userId === userId);
     try {
       await workspacesApi.updateMemberRole(currentWorkspaceId, userId, newRole);
-    } catch {
-      // ignore
+      setMembersList((prev) =>
+        prev.map((m) => (m.userId === userId ? { ...m, roleName: newRole } : m))
+      );
+      addToast({
+        type: 'info',
+        title: 'Role Updated Successfully',
+        description: `${member?.name || 'Member'} role changed to ${newRole.toUpperCase()}.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to Update Role',
+        description: err.message || 'Database offline. Role could not be updated.',
+      });
     }
-    setMembersList((prev) =>
-      prev.map((m) => (m.userId === userId ? { ...m, roleName: newRole } : m))
-    );
-    addToast({
-      type: 'info',
-      title: 'Member Role Updated',
-      description: `${member?.name || 'Member'} role changed to ${newRole.toUpperCase()}.`,
-    });
   };
 
   const handleRemoveMember = async (userId: string) => {
     const member = membersList.find((m) => m.userId === userId);
     try {
       await workspacesApi.removeMember(currentWorkspaceId, userId);
-    } catch {
-      // ignore
+      setMembersList((prev) => prev.filter((m) => m.userId !== userId));
+      addToast({
+        type: 'info',
+        title: 'Member Removed',
+        description: `${member?.name || 'Member'} has been removed from workspace.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to Remove Member',
+        description: err.message || 'Database offline. Member could not be removed.',
+      });
     }
-    setMembersList((prev) => prev.filter((m) => m.userId !== userId));
-    addToast({
-      type: 'info',
-      title: 'Member Removed',
-      description: `${member?.name || 'Member'} was removed from the workspace.`,
-    });
   };
 
   const { fitView, setCenter } = useReactFlow();
@@ -520,29 +597,33 @@ function WorkspaceContainer({
     const targetSource = sourcesList.find((s) => s.id === sourceId);
     try {
       await sourcesApi.delete(sourceId);
-    } catch {
-      // ignore
-    }
-    setSourcesList((prev) => {
-      const updated = prev.filter((s) => s.id !== sourceId);
-      try {
-        localStorage.setItem(`vintrix_sources_${currentWorkspaceId}`, JSON.stringify(updated));
-      } catch {
-        // pass
+      setSourcesList((prev) => {
+        const next = prev.filter((s) => s.id !== sourceId);
+        try {
+          localStorage.setItem(`vintrix_sources_${currentWorkspaceId}`, JSON.stringify(next));
+        } catch {
+          // pass
+        }
+        return next;
+      });
+      if (targetSource) {
+        setNodes((prev) =>
+          prev.filter((node) => {
+            const data = node.data as unknown as CodeNodeData;
+            return data?.sourceName !== targetSource.name;
+          })
+        );
       }
-      return updated;
-    });
-    if (targetSource) {
-      setNodes((prev) =>
-        prev.filter((node) => {
-          const data = node.data as unknown as CodeNodeData;
-          return data?.sourceName !== targetSource.name;
-        })
-      );
       addToast({
         type: 'info',
         title: 'Source Removed',
-        description: `Source '${targetSource.name}' and its knowledge nodes were removed from workspace.`,
+        description: `Source "${targetSource?.name || sourceId}" was successfully removed.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to Remove Source',
+        description: err.message || 'Database offline. Source could not be removed.',
       });
     }
   };
@@ -550,6 +631,10 @@ function WorkspaceContainer({
   const handleTriggerReindex = async (sourceId: string) => {
     const targetSource = sourcesList.find((s) => s.id === sourceId);
     
+    // Clear selected node and path finder to prevent blast radius dimming on new graph
+    setSelectedNodeId(null);
+    setIsPathFinderActive(false);
+
     // Set status to indexing first
     setSourcesList((prev) =>
       prev.map((s) =>
@@ -564,138 +649,32 @@ function WorkspaceContainer({
     });
 
     try {
-      await sourcesApi.triggerReindex(sourceId);
-    } catch {
-      // ignore
+      await sourcesApi.triggerReindex(sourceId, currentWorkspaceId);
+    } catch (err: any) {
+      setSourcesList((prev) =>
+        prev.map((s) =>
+          s.id === sourceId ? { ...s, status: 'error' } : s
+        )
+      );
+      addToast({
+        type: 'error',
+        title: 'Re-indexing Failed',
+        description: err.message || `Failed to reindex ${targetSource?.name || 'source'}`,
+      });
     }
-
-    setTimeout(() => {
-      if (targetSource) {
-        const baseName = targetSource.name.replace(/[^a-zA-Z0-9]/g, '') || 'Source';
-        const sampleNodes: Node[] = [
-          {
-            id: `node-${targetSource.id}-entry`,
-            type: 'codeNode',
-            position: { x: 180, y: 140 },
-            data: {
-              label: `${baseName}Gateway`,
-              kind: 'gateway',
-              sourceName: targetSource.name,
-              sourceType: targetSource.type,
-              filePath: 'src/index.ts',
-              lines: 'L1-L90',
-              methodCount: 4,
-              dependencyCount: 2,
-              status: 'synced',
-              summary: `Entry point, route registration, and gateway orchestrator for ${targetSource.name}.`,
-              codeSnippet: `import { Router } from 'elysia';\nexport const app = new Router();\napp.get('/', () => ({ status: 'healthy', source: '${targetSource.name}' }));`,
-              tags: [targetSource.type, 'core', 'entry', 'gateway'],
-            },
-          },
-          {
-            id: `node-${targetSource.id}-service`,
-            type: 'codeNode',
-            position: { x: 480, y: 100 },
-            data: {
-              label: `${baseName}Service`,
-              kind: 'service',
-              sourceName: targetSource.name,
-              sourceType: targetSource.type,
-              filePath: 'src/services/handler.ts',
-              lines: 'L1-L165',
-              methodCount: 6,
-              dependencyCount: 1,
-              status: 'synced',
-              summary: `Domain business logic engine and data processing pipeline for ${targetSource.name}.`,
-              codeSnippet: `export class ${baseName}Service {\n  async process() {\n    return { success: true, processedAt: Date.now() };\n  }\n}`,
-              tags: [targetSource.type, 'service', 'domain'],
-            },
-          },
-          {
-            id: `node-${targetSource.id}-db`,
-            type: 'codeNode',
-            position: { x: 780, y: 180 },
-            data: {
-              label: `${baseName}Store`,
-              kind: 'database',
-              sourceName: targetSource.name,
-              sourceType: targetSource.type,
-              filePath: 'src/db/schema.ts',
-              lines: 'L1-L60',
-              methodCount: 2,
-              dependencyCount: 0,
-              status: 'synced',
-              summary: `Persistent schema model and ORM entity definitions for ${targetSource.name}.`,
-              codeSnippet: `export const records = pgTable('${baseName.toLowerCase()}_records', {\n  id: uuid('id').primaryKey(),\n  name: text('name').notNull(),\n});`,
-              tags: [targetSource.type, 'database', 'schema'],
-            },
-          },
-        ];
-
-        const sampleEdges: Edge[] = [
-          {
-            id: `edge-${targetSource.id}-1-2`,
-            source: `node-${targetSource.id}-entry`,
-            target: `node-${targetSource.id}-service`,
-            type: 'smoothstep',
-            animated: true,
-            style: { stroke: '#38bdf8', strokeWidth: 2 },
-          },
-          {
-            id: `edge-${targetSource.id}-2-3`,
-            source: `node-${targetSource.id}-service`,
-            target: `node-${targetSource.id}-db`,
-            type: 'smoothstep',
-            animated: true,
-            style: { stroke: '#818cf8', strokeWidth: 2 },
-          },
-        ];
-
-        setNodes((prev) => {
-          const merged = [...prev.filter((n) => (n.data as unknown as CodeNodeData)?.sourceName !== targetSource.name), ...sampleNodes];
-          try {
-            localStorage.setItem(`vintrix_nodes_${currentWorkspaceId}`, JSON.stringify(merged));
-          } catch {
-            // pass
-          }
-          return merged;
-        });
-
-        setEdges((prev) => {
-          const merged = [...prev, ...sampleEdges];
-          try {
-            localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(merged));
-          } catch {
-            // pass
-          }
-          return merged;
-        });
-
-        setSourcesList((prev) => {
-          const updated = prev.map((s) =>
-            s.id === sourceId
-              ? { ...s, lastSyncedAt: 'Just now', status: 'synced' as const, nodesCount: sampleNodes.length }
-              : s
-          );
-          try {
-            localStorage.setItem(`vintrix_sources_${currentWorkspaceId}`, JSON.stringify(updated));
-          } catch {
-            // pass
-          }
-          return updated;
-        });
-
-        addToast({
-          type: 'success',
-          title: 'Re-indexing Completed',
-          description: `Extracted ${sampleNodes.length} AST components and relations for '${targetSource.name}'.`,
-        });
-      }
-    }, 2200);
   };
 
   const onNodesChange: OnNodesChange = useCallback(
-    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    (changes) => {
+      // Only process changes that alter persistent node attributes (e.g. position drag, remove)
+      // Ignore dimension updates to prevent infinite render loops with enriched node state
+      const filteredChanges = changes.filter(
+        (c) => c.type !== 'dimensions'
+      );
+      if (filteredChanges.length > 0) {
+        setNodes((nds) => applyNodeChanges(filteredChanges, nds));
+      }
+    },
     []
   );
   const onEdgesChange: OnEdgesChange = useCallback(
@@ -1210,13 +1189,14 @@ function WorkspaceContainer({
 
   // Auto-focus first matching node when user types a search query
   useEffect(() => {
-    if (!searchQuery.trim()) return;
+    const q = searchQuery.trim();
+    if (!q) return;
     const matched = filteredNodes[0];
-    if (matched) {
+    if (matched && matched.id !== selectedNodeId) {
       setSelectedNodeId(matched.id);
       focusNodeOnCanvas(matched.id);
     }
-  }, [searchQuery, filteredNodes, focusNodeOnCanvas]);
+  }, [searchQuery]);
 
   // Export Knowledge Graph as SVG file
   const handleExportSvg = () => {
@@ -1683,15 +1663,37 @@ graph TD
           </button>
 
           {/* Manage Sources - Desktop */}
-          <button
-            onClick={() => setIsManageSourcesOpen(true)}
-            className="hidden md:flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-sky-300 shrink-0"
-            title="Click to manage, re-index, or delete connected sources"
-          >
-            <span>
-              Sources: {gitSourcesCount} Git, {sshSourcesCount} SSH
-            </span>
-          </button>
+          {(() => {
+            const activeIndexingKey = Object.keys(reindexProgress)[0];
+            const activeProgress = activeIndexingKey ? reindexProgress[activeIndexingKey] : null;
+
+            if (activeProgress) {
+              return (
+                <button
+                  onClick={() => setIsManageSourcesOpen(true)}
+                  className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all font-mono text-[11px] shrink-0"
+                  title="Click to view indexing progress details"
+                >
+                  <RefreshCw size={12} className="animate-spin text-amber-400" />
+                  <span>
+                    Indexing {activeProgress.current}/{activeProgress.total} ({activeProgress.percent}%)
+                  </span>
+                </button>
+              );
+            }
+
+            return (
+              <button
+                onClick={() => setIsManageSourcesOpen(true)}
+                className="hidden md:flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-all hover:text-sky-300 shrink-0"
+                title="Click to manage, re-index, or delete connected sources"
+              >
+                <span>
+                  Sources: {gitSourcesCount} Git, {sshSourcesCount} SSH
+                </span>
+              </button>
+            );
+          })()}
 
           {/* Nodes count - Large Screens */}
           <span className="hidden lg:flex items-center gap-1.5 text-slate-400">
@@ -1883,9 +1885,9 @@ graph TD
                     <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-3">
                       <Layers size={22} />
                     </div>
-                    <h3 className="text-sm font-semibold text-slate-100 mb-1">Workspace Belum Memiliki Source Code</h3>
+                    <h3 className="text-sm font-semibold text-slate-100 mb-1">No Code Sources in Workspace</h3>
                     <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                      Tambahkan repository Git atau server SSH Anda untuk mulai mengindeks AST arsitektur dan melihat graf dependensi.
+                      Connect your Git repository or SSH server to start indexing architecture ASTs and visualize dependency graphs.
                     </p>
                     <button
                       type="button"
@@ -2037,7 +2039,7 @@ graph TD
             />
           </>
         ) : (
-          <ChatboxView />
+          <ChatboxView initialWorkspaceId={currentWorkspaceId} />
         )}
       </div>
 
@@ -2110,7 +2112,7 @@ graph TD
 
           const sampleEdges: Edge[] = [
             {
-              id: `edge-${newSource.id}-1-2`,
+              id: `edge-${newSource.id}-${Date.now()}-1-2`,
               source: `node-${newSource.id}-entry`,
               target: `node-${newSource.id}-service`,
               type: 'smoothstep',
@@ -2118,7 +2120,7 @@ graph TD
               style: { stroke: '#38bdf8', strokeWidth: 2 },
             },
             {
-              id: `edge-${newSource.id}-2-3`,
+              id: `edge-${newSource.id}-${Date.now()}-2-3`,
               source: `node-${newSource.id}-service`,
               target: `node-${newSource.id}-db`,
               type: 'smoothstep',
@@ -2137,9 +2139,9 @@ graph TD
             branchOrPort:
               newSource.branchOrPort || (newSource.type === 'git' ? 'main' : 'Port 22'),
             indexPaths: newSource.indexPaths && newSource.indexPaths.length > 0 ? newSource.indexPaths : ['/'],
-            status: 'synced',
+            status: 'indexing',
             lastSyncedAt: 'Just now',
-            nodesCount: sampleNodes.length,
+            nodesCount: 0,
           };
 
           // Optimistically update nodes & edges immediately on canvas
@@ -2153,7 +2155,9 @@ graph TD
             return merged;
           });
           setEdges((prev) => {
-            const merged = [...prev, ...sampleEdges];
+            const existingEdgeIds = new Set(prev.map((e) => e.id));
+            const uniqueSampleEdges = sampleEdges.filter((e) => !existingEdgeIds.has(e.id));
+            const merged = [...prev, ...uniqueSampleEdges];
             try {
               localStorage.setItem(`vintrix_edges_${currentWorkspaceId}`, JSON.stringify(merged));
             } catch {
@@ -2172,7 +2176,13 @@ graph TD
             return updated;
           });
 
-          // Also attempt to fetch from backend API if available
+          // Otomatis buka modal Manage Sources agar user melihat progres proses indexing
+          setIsManageSourcesOpen(true);
+
+          // Otomatis picu background indexing di backend agar counter real-time berjalan
+          handleTriggerReindex(newSource.id).catch((err) => {
+            console.error('[App] Background reindex error:', err);
+          });
           graphApi
             .getWorkspaceGraph<CodeNodeData>(currentWorkspaceId)
             .then((res) => {
@@ -2201,6 +2211,7 @@ graph TD
         isOpen={isManageSourcesOpen}
         onClose={() => setIsManageSourcesOpen(false)}
         sources={sourcesList}
+        reindexProgress={reindexProgress}
         onOpenAddModal={() => setIsAddSourceOpen(true)}
         onDeleteSource={handleDeleteSource}
         onTriggerReindex={handleTriggerReindex}
@@ -2292,7 +2303,18 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     try {
       const stored = localStorage.getItem('vintrix_user');
-      return stored ? JSON.parse(stored) : null;
+      if (!stored) return null;
+      const parsed = JSON.parse(stored) as AuthUser;
+      // Purge stale sessions where the user ID is a fake non-UUID string
+      // (e.g. "usr-google-..." created when DB was offline during OAuth)
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!UUID_REGEX.test(parsed.id)) {
+        console.warn('[Auth] Clearing stale session with non-UUID user ID:', parsed.id);
+        localStorage.removeItem('vintrix_user');
+        localStorage.removeItem('vintrix_token');
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }

@@ -30,7 +30,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
   }))
   .get('/google', ({ redirect }) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/google/callback';
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `http://localhost:${process.env.PORT || 3001}/api/v1/auth/google/callback`;
     if (!clientId) {
       // In local dev without OAuth credentials configured, provide mock redirect with code
       return redirect(`/api/v1/auth/callback/redirect?provider=google&code=mock-google-code-${Date.now()}`);
@@ -52,7 +52,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
       try {
         const clientId = process.env.GOOGLE_CLIENT_ID;
         const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-        const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/google/callback';
+        const redirectUri = process.env.GOOGLE_REDIRECT_URI || `http://localhost:${process.env.PORT || 3001}/api/v1/auth/google/callback`;
 
         // 1. Exchange code for Google access token
         const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -96,7 +96,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
         const avatarUrl = profile.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${targetEmail}`;
         const providerId = profile.id;
 
-        let userId = `usr-google-${Date.now()}`;
+        let userId: string;
         try {
           const existingUsers = await db.select().from(users).where(eq(users.email, targetEmail)).limit(1);
           if (existingUsers.length > 0) {
@@ -121,33 +121,40 @@ export const authRouter = new Elysia({ prefix: '/auth' })
                 providerId,
               })
               .returning();
-            if (inserted.length > 0) {
-              userId = inserted[0].id;
+            if (inserted.length === 0) {
+              throw new Error('Failed to insert new user into database');
+            }
+            userId = inserted[0].id;
 
-              // Create default personal workspace for new Google OAuth user
-              const insertedWorkspace = await db
-                .insert(workspaces)
-                .values({
-                  name: `${displayName.split(' ')[0]}'s Workspace`,
-                  description: 'Personal codebase intelligence workspace',
-                  ownerId: userId,
-                })
-                .returning();
+            // Create default personal workspace for new Google OAuth user
+            const insertedWorkspace = await db
+              .insert(workspaces)
+              .values({
+                name: `${displayName.split(' ')[0]}'s Workspace`,
+                description: 'Personal codebase intelligence workspace',
+                ownerId: userId,
+              })
+              .returning();
 
-              if (insertedWorkspace.length > 0) {
-                const defaultRoles = await db.select().from(roles).where(eq(roles.name, 'owner')).limit(1);
-                if (defaultRoles.length > 0) {
-                  await db.insert(workspaceMembers).values({
-                    workspaceId: insertedWorkspace[0].id,
-                    userId,
-                    roleId: defaultRoles[0].id,
-                  });
-                }
+            if (insertedWorkspace.length > 0) {
+              const defaultRoles = await db.select().from(roles).where(eq(roles.name, 'owner')).limit(1);
+              if (defaultRoles.length > 0) {
+                await db.insert(workspaceMembers).values({
+                  workspaceId: insertedWorkspace[0].id,
+                  userId,
+                  roleId: defaultRoles[0].id,
+                });
               }
             }
           }
-        } catch (dbErr) {
-          console.warn('[Google OAuth] DB upsert warning:', dbErr);
+        } catch (dbErr: any) {
+          console.error('[Google OAuth] DB unavailable:', dbErr.message);
+          return redirect(`${frontendUrl}?auth_error=database_unavailable`);
+        }
+
+        // userId must be a valid UUID from DB at this point — never a fake string
+        if (!userId!) {
+          return redirect(`${frontendUrl}?auth_error=user_creation_failed`);
         }
 
         // 3. Issue Vintrix JWT Token
@@ -221,8 +228,10 @@ export const authRouter = new Elysia({ prefix: '/auth' })
             userId = inserted[0].id;
           }
         }
-      } catch (err) {
-        console.warn('[OAuth Callback Redirect] user sync fallback:', err);
+      } catch (err: any) {
+        console.error('[OAuth Callback Redirect] database unavailable:', err.message);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        return redirect(`${frontendUrl}?auth_error=database_unavailable`);
       }
 
       const token = await jwt.sign({
@@ -267,7 +276,6 @@ export const authRouter = new Elysia({ prefix: '/auth' })
       try {
         // Query or persist user in database
         const existingUsers = await db.select().from(users).where(eq(users.email, targetEmail)).limit(1);
-
         if (existingUsers.length > 0) {
           userId = existingUsers[0].id;
         } else {
@@ -306,8 +314,10 @@ export const authRouter = new Elysia({ prefix: '/auth' })
             }
           }
         }
-      } catch (err) {
-        console.warn('[OAuth] DB user sync failed (running offline fallback):', err);
+      } catch (err: any) {
+        console.error('[OAuth POST] Database unavailable:', err.message);
+        set.status = 503;
+        return { message: 'Database unavailable. Authentication and session cannot be established without database.' };
       }
 
       const token = await jwt.sign({

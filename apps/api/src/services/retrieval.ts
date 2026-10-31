@@ -15,6 +15,28 @@ export interface RetrievedContext {
 }
 
 /**
+ * Checks if a file path or label looks like confidential credentials, private keys, or secrets.
+ */
+export function isConfidentialResource(filePath: string, label: string): boolean {
+  const target = `${filePath} ${label}`.toLowerCase();
+  return (
+    target.includes('.env') && !target.includes('.env.example') ||
+    target.includes('.pem') ||
+    target.includes('.key') ||
+    target.includes('id_rsa') ||
+    target.includes('id_ed25519') ||
+    target.includes('id_ecdsa') ||
+    target.includes('private_key') ||
+    target.includes('privkey') ||
+    target.includes('.p12') ||
+    target.includes('.pfx') ||
+    target.includes('/.ssh/') ||
+    target.includes('secret') ||
+    target.includes('credentials')
+  );
+}
+
+/**
  * Tokenize a text query or document string into lowercased terms.
  * Supports alphanumeric words, camelCase splits, and path separators.
  */
@@ -102,6 +124,10 @@ export async function retrieveRelevantContext(
   let totalTokensCount = 0;
 
   for (const node of nodes) {
+    if (isConfidentialResource(node.filePath, node.label)) {
+      continue;
+    }
+
     let parsedMeta: any = {};
     try {
       if (node.metadata) parsedMeta = JSON.parse(node.metadata);

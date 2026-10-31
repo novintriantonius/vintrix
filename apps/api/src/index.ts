@@ -8,7 +8,10 @@ import { authRouter } from './routes/auth';
 import { graphRouter } from './routes/graph';
 
 const app = new Elysia()
-  .use(cors())
+  .use(cors({
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    credentials: true,
+  }))
   .use(
     swagger({
       documentation: {

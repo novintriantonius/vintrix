@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   GitBranch,
   Terminal,
@@ -9,6 +9,9 @@ import {
   Loader2,
   Plus,
   Layers,
+  ChevronDown,
+  Search,
+  Check,
 } from 'lucide-react';
 import { sourcesApi } from '../../services/api';
 import { Modal, PathTagInput } from '../common';
@@ -42,6 +45,23 @@ export function AddSourceModal({
   const [gitToken, setGitToken] = useState('');
   const [isFullRepoIndex, setIsFullRepoIndex] = useState(true);
   const [gitPathList, setGitPathList] = useState<string[]>([]);
+  const [isGitConnected, setIsGitConnected] = useState(false);
+  const [isTestingGit, setIsTestingGit] = useState(false);
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+  const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
+  const [branchSearchQuery, setBranchSearchQuery] = useState('');
+  const branchDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close branch dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target as Node)) {
+        setIsBranchDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // SSH state
   const [sshName, setSshName] = useState('');
@@ -64,6 +84,57 @@ export function AddSourceModal({
   const [isBrowsingDirs, setIsBrowsingDirs] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Test Git repository connection & verify token/branch
+  const handleTestGit = async () => {
+    if (!gitRepoUrl.trim()) {
+      setTestResult({
+        success: false,
+        message: 'Please provide a valid Git Repository URL.',
+      });
+      return;
+    }
+    setIsTestingGit(true);
+    setTestResult(null);
+    try {
+      const result = await sourcesApi.testGit({
+        repoUrl: gitRepoUrl.trim(),
+        branch: undefined, // test repo accessibility first without restricting to single branch
+        token: gitToken.trim() || undefined,
+      });
+
+      if (result.success) {
+        setIsGitConnected(true);
+        const branches = result.branches || [];
+        setAvailableBranches(branches);
+        if (branches.length > 0 && (!gitBranch || !branches.includes(gitBranch))) {
+          // Auto-select main, master, or first branch found
+          const preferred = branches.find((b) => b === 'main' || b === 'master') || branches[0];
+          setGitBranch(preferred);
+        }
+        setTestResult({
+          success: true,
+          message: `Connected successfully! Found ${branches.length} remote branches. You can now choose your target branch below.`,
+        });
+      } else {
+        setIsGitConnected(false);
+        setAvailableBranches([]);
+        setTestResult({
+          success: false,
+          message: result.error || 'Failed to connect to Git repository.',
+        });
+      }
+    } catch (err: unknown) {
+      setIsGitConnected(false);
+      setAvailableBranches([]);
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to connect to Git repository.',
+      });
+    } finally {
+      setIsTestingGit(false);
+    }
+  };
 
   // Test SSH & verify connectivity
   const handleTestSSH = async () => {
@@ -137,59 +208,44 @@ export function AddSourceModal({
       let location = '';
       let branchOrPort = '';
       let targetPaths: string[] = [];
+      const validWorkspaceId = workspaceId;
 
-      try {
-        if (activeType === 'git') {
-          targetPaths = isFullRepoIndex ? [] : gitPathList;
-          location = gitRepoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '');
-          branchOrPort = gitBranch || 'main';
-          result = await sourcesApi.addGit({
-            workspaceId,
-            name: gitName || 'Git Repo',
-            repoUrl: gitRepoUrl,
-            branch: gitBranch,
-            token: gitToken || undefined,
-            indexPaths: targetPaths,
-          });
-        } else {
-          targetPaths = sshPathList;
-          location = `${sshUsername}@${sshHost}`;
-          branchOrPort = `Port ${sshPort}`;
-          result = await sourcesApi.addSSH({
-            workspaceId,
-            name: sshName || 'SSH Server',
-            host: sshHost,
-            port: Number(sshPort),
-            username: sshUsername,
-            password: sshAuthType === 'password' ? sshPassword : undefined,
-            privateKey: sshAuthType === 'key' ? sshPrivateKey : undefined,
-            passphrase: sshPassphrase || undefined,
-            indexPaths: sshPathList,
-          });
-        }
-      } catch (apiErr) {
-        // Fallback for offline mode or server DB unavailable: create local mock source
-        const localId = `src-${Date.now()}`;
-        result = {
-          id: localId,
-          name: (activeType === 'git' ? gitName : sshName) || 'Local Source',
-          type: activeType,
-        };
+      if (activeType === 'git') {
+        targetPaths = isFullRepoIndex ? [] : gitPathList;
+        location = gitRepoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '');
+        branchOrPort = gitBranch || 'main';
+        result = await sourcesApi.addGit({
+          workspaceId: validWorkspaceId,
+          name: gitName || 'Git Repo',
+          repoUrl: gitRepoUrl,
+          branch: gitBranch,
+          token: gitToken || undefined,
+          indexPaths: targetPaths,
+        });
+      } else {
+        targetPaths = sshPathList;
+        location = `${sshUsername}@${sshHost}`;
+        branchOrPort = `Port ${sshPort}`;
+        result = await sourcesApi.addSSH({
+          workspaceId: validWorkspaceId,
+          name: sshName || 'SSH Server',
+          host: sshHost,
+          port: Number(sshPort),
+          username: sshUsername,
+          password: sshAuthType === 'password' ? sshPassword : undefined,
+          privateKey: sshAuthType === 'key' ? sshPrivateKey : undefined,
+          passphrase: sshPassphrase || undefined,
+          indexPaths: sshPathList,
+        });
       }
-
-      onSourceAdded({
-        id: result.id,
-        name: result.name || (activeType === 'git' ? gitName : sshName),
-        type: activeType,
-        location,
-        branchOrPort,
-        indexPaths: targetPaths,
-      });
 
       // Reset form states
       setGitName('');
       setGitRepoUrl('');
       setGitToken('');
+      setGitBranch('main');
+      setAvailableBranches([]);
+      setIsGitConnected(false);
       setGitPathList([]);
       setSshName('');
       setSshHost('');
@@ -199,8 +255,19 @@ export function AddSourceModal({
       setIsSSHConnected(false);
       setTestResult(null);
 
+      // Optimistically dismiss modal & pass source to parent
+      onSourceAdded({
+        id: result.id,
+        name: result.name || (activeType === 'git' ? gitName : sshName),
+        type: activeType,
+        location,
+        branchOrPort,
+        indexPaths: targetPaths,
+      });
+
       onClose();
     } catch (err: unknown) {
+      console.error('[AddSourceModal] Error adding code source:', err);
       setTestResult({
         success: false,
         message: err instanceof Error ? err.message : 'Failed to add source.',
@@ -282,37 +349,182 @@ export function AddSourceModal({
                 required
                 placeholder="https://github.com/org/repo.git or git@github.com:org/repo.git"
                 value={gitRepoUrl}
-                onChange={(e) => setGitRepoUrl(e.target.value)}
+                onChange={(e) => {
+                  setGitRepoUrl(e.target.value);
+                  setIsGitConnected(false);
+                }}
                 className="w-full bg-[#050912] border border-white/[0.08] focus:border-sky-500/50 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-mono text-slate-400 mb-1">
+            <div>
+              <label className="block text-[11px] font-mono text-slate-400 mb-1">
+                ACCESS TOKEN (OPTIONAL)
+              </label>
+              <input
+                type="password"
+                placeholder="ghp_xxx (Private Repo)"
+                value={gitToken}
+                onChange={(e) => {
+                  setGitToken(e.target.value);
+                  setIsGitConnected(false);
+                  setAvailableBranches([]);
+                }}
+                className="w-full bg-[#050912] border border-white/[0.08] focus:border-sky-500/50 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono"
+              />
+            </div>
+
+            {/* Test Git Connection Button */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={handleTestGit}
+                disabled={isTestingGit || !gitRepoUrl.trim()}
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs border font-medium transition-all ${
+                  isGitConnected
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-sm'
+                    : 'bg-sky-500/10 hover:bg-sky-500/15 text-sky-300 border-sky-500/30'
+                } disabled:opacity-50`}
+              >
+                {isTestingGit ? (
+                  <Loader2 size={14} className="animate-spin text-sky-400" />
+                ) : isGitConnected ? (
+                  <CheckCircle2 size={14} className="text-emerald-400" />
+                ) : (
+                  <GitBranch size={14} />
+                )}
+                <span>
+                  {isTestingGit
+                    ? 'Connecting & fetching remote branches...'
+                    : isGitConnected
+                    ? 'Git Connected & Branches Loaded ✓'
+                    : '1. Test Connection & Load Remote Branches'}
+                </span>
+              </button>
+            </div>
+
+            {/* Target Branch Picker - Active only after connected */}
+            <div
+              className={`p-3 rounded-xl border transition-all ${
+                isGitConnected
+                  ? 'bg-white/[0.02] border-white/[0.08]'
+                  : 'bg-white/[0.01] border-white/[0.04] opacity-50'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+                  <GitBranch size={13} className="text-sky-400" />
                   TARGET BRANCH
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={gitBranch}
-                  onChange={(e) => setGitBranch(e.target.value)}
-                  className="w-full bg-[#050912] border border-white/[0.08] focus:border-sky-500/50 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono"
-                />
+                {!isGitConnected ? (
+                  <span className="text-[10px] text-amber-400 font-mono">
+                    Test connection first to choose branch
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    {availableBranches.length} remote {availableBranches.length === 1 ? 'branch' : 'branches'} available
+                  </span>
+                )}
               </div>
-              <div>
-                <label className="block text-[11px] font-mono text-slate-400 mb-1">
-                  ACCESS TOKEN (OPTIONAL)
-                </label>
-                <input
-                  type="password"
-                  placeholder="ghp_xxx (Private Repo)"
-                  value={gitToken}
-                  onChange={(e) => setGitToken(e.target.value)}
-                  className="w-full bg-[#050912] border border-white/[0.08] focus:border-sky-500/50 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono"
-                />
+
+              {/* Searchable Branch Dropdown */}
+              <div className="relative" ref={branchDropdownRef}>
+                <button
+                  type="button"
+                  disabled={!isGitConnected}
+                  onClick={() => setIsBranchDropdownOpen((prev) => !prev)}
+                  className="w-full bg-[#050912] border border-white/[0.08] focus:border-sky-500/50 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono flex items-center justify-between transition-colors disabled:cursor-not-allowed"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <GitBranch size={13} className="text-sky-400 shrink-0" />
+                    <span className="text-slate-200 font-medium truncate">
+                      {gitBranch || 'Select target branch'}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className={`text-slate-400 transition-transform duration-200 shrink-0 ${
+                      isBranchDropdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {isBranchDropdownOpen && isGitConnected && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#0a0f1d] border border-white/[0.12] rounded-xl shadow-2xl z-50 overflow-hidden backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
+                    {/* Search Branch Input */}
+                    <div className="p-2 border-b border-white/[0.06] flex items-center gap-2 bg-white/[0.02]">
+                      <Search size={13} className="text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Search branches..."
+                        value={branchSearchQuery}
+                        onChange={(e) => setBranchSearchQuery(e.target.value)}
+                        className="w-full bg-transparent text-xs text-slate-200 outline-none font-mono placeholder:text-slate-500"
+                      />
+                    </div>
+
+                    {/* Branch List */}
+                    <div className="max-h-48 overflow-y-auto p-1 space-y-0.5">
+                      {availableBranches
+                        .filter((b) =>
+                          b.toLowerCase().includes(branchSearchQuery.toLowerCase())
+                        )
+                        .map((branch) => {
+                          const isSelected = gitBranch === branch;
+                          return (
+                            <button
+                              key={branch}
+                              type="button"
+                              onClick={() => {
+                                setGitBranch(branch);
+                                setIsBranchDropdownOpen(false);
+                                setBranchSearchQuery('');
+                              }}
+                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono text-left transition-all ${
+                                isSelected
+                                  ? 'bg-sky-500/20 text-sky-300 font-semibold'
+                                  : 'text-slate-300 hover:bg-white/[0.06] hover:text-white'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <GitBranch size={12} className={isSelected ? 'text-sky-400' : 'text-slate-500'} />
+                                <span className="truncate">{branch}</span>
+                              </span>
+                              {isSelected && <Check size={12} className="text-sky-400 shrink-0" />}
+                            </button>
+                          );
+                        })}
+
+                      {availableBranches.filter((b) =>
+                        b.toLowerCase().includes(branchSearchQuery.toLowerCase())
+                      ).length === 0 && (
+                        <div className="py-4 text-center text-xs text-slate-500 font-mono">
+                          No matching branch found
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
+
+            {testResult && activeType === 'git' && (
+              <div
+                className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                  testResult.success
+                    ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-950/20 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                {testResult.success ? (
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                )}
+                <span>{testResult.message}</span>
+              </div>
+            )}
 
             {/* Git Index Scope Option: Full Repo vs Specific Paths */}
             <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl space-y-3">
@@ -525,7 +737,7 @@ export function AddSourceModal({
               </button>
             </div>
 
-            {testResult && (
+            {testResult && activeType === 'ssh' && (
               <div
                 className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
                   testResult.success
@@ -583,22 +795,48 @@ export function AddSourceModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="pt-2 border-t border-white/[0.08] flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting || (activeType === 'ssh' && !isSSHConnected)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold transition-all disabled:opacity-50 shadow-lg shadow-sky-500/20"
-          >
-            {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-            <span>Add & Index Source</span>
-          </button>
+        <div className="pt-2 border-t border-white/[0.08] flex items-center justify-between gap-2">
+          <div className="text-[11px] font-mono">
+            {activeType === 'git' && !isGitConnected && (
+              <span className="text-amber-400/90 flex items-center gap-1">
+                <span>⚠️</span>
+                <span>Test Git connection first to enable Add</span>
+              </span>
+            )}
+            {activeType === 'ssh' && !isSSHConnected && (
+              <span className="text-amber-400/90 flex items-center gap-1">
+                <span>⚠️</span>
+                <span>Test SSH handshake first to enable Add</span>
+              </span>
+            )}
+            {((activeType === 'git' && isGitConnected) || (activeType === 'ssh' && isSSHConnected)) && (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 size={13} />
+                <span>Connected & verified</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={
+                isSubmitting ||
+                (activeType === 'git' && !isGitConnected) ||
+                (activeType === 'ssh' && !isSSHConnected)
+              }
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-sky-500/20"
+            >
+              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+              <span>{isSubmitting ? 'Verifying & Adding...' : 'Add & Index Source'}</span>
+            </button>
+          </div>
         </div>
       </form>
     </Modal>

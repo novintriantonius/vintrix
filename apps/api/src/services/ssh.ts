@@ -53,39 +53,66 @@ export async function testSSHConnection(opts: SSHConnectOptions): Promise<true> 
   return true;
 }
 
-/** List directory contents via SFTP. */
+/** Resolve remote path: if path is root '/' and not accessible, fallback to home dir via pwd. */
+async function resolveRemotePath(_sftp: SFTPWrapper, conn: Client, requestedPath: string): Promise<string> {
+  // If not root, use as-is
+  if (requestedPath && requestedPath !== '/') return requestedPath;
+
+  // Try to get the home directory via exec pwd
+  return new Promise<string>((resolve) => {
+    (conn as any).exec('pwd', (err: any, stream: any) => {
+      if (err) return resolve(requestedPath);
+      let output = '';
+      stream.on('data', (d: any) => (output += d.toString()));
+      stream.stderr.on('data', () => {});
+      stream.on('close', () => {
+        const home = output.trim();
+        resolve(home && home !== '' ? home : requestedPath);
+      });
+    });
+  });
+}
+
+/** List directory contents via SFTP. Falls back to home dir if root is not accessible. */
 export async function listRemoteDirectory(
   opts: SSHConnectOptions,
   remotePath: string,
-): Promise<RemoteDirEntry[]> {
+): Promise<{ entries: RemoteDirEntry[]; resolvedPath: string }> {
   const conn = await openConnection(opts);
 
   try {
-    const entries = await new Promise<RemoteDirEntry[]>((resolve, reject) => {
-      conn.sftp((err: Error | undefined, sftp: SFTPWrapper) => {
+    const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
+      conn.sftp((err, sftpWrapper) => {
         if (err) return reject(err);
-
-        sftp.readdir(remotePath, (err: Error | undefined, list: any[]) => {
-          if (err) return reject(err);
-
-          resolve(
-            list.map((item) => ({
-              name: item.filename,
-              type: item.attrs.isDirectory()
-                ? 'directory'
-                : item.attrs.isSymbolicLink()
-                  ? 'symlink'
-                  : 'file',
-              size: item.attrs.size,
-              modifiedAt: new Date(item.attrs.mtime * 1000).toISOString(),
-              permissions: item.longname.substring(0, 10),
-            })),
-          );
-        });
+        resolve(sftpWrapper);
       });
     });
 
-    return entries;
+    // Resolve actual path (handles root-inaccessible servers)
+    const targetPath = await resolveRemotePath(sftp, conn, remotePath || '/');
+
+    const entries = await new Promise<RemoteDirEntry[]>((resolve, reject) => {
+      sftp.readdir(targetPath, (err: Error | undefined, list: any[]) => {
+        if (err) {
+          return reject(new Error(`No such file or directory: ${targetPath}`));
+        }
+        resolve(
+          list.map((item) => ({
+            name: item.filename,
+            type: item.attrs.isDirectory()
+              ? 'directory'
+              : item.attrs.isSymbolicLink()
+                ? 'symlink'
+                : 'file',
+            size: item.attrs.size,
+            modifiedAt: new Date(item.attrs.mtime * 1000).toISOString(),
+            permissions: item.longname.substring(0, 10),
+          })),
+        );
+      });
+    });
+
+    return { entries, resolvedPath: targetPath };
   } finally {
     conn.end();
   }
@@ -99,7 +126,7 @@ export async function syncRemoteSSHDirectory(
   opts: SSHConnectOptions,
   remoteDir: string,
   localTargetDir: string,
-  maxFiles = 500,
+  maxFiles = 5000,
 ): Promise<{ filesDownloaded: number; targetDir: string }> {
   const conn = await openConnection(opts);
   let filesDownloaded = 0;
@@ -112,18 +139,56 @@ export async function syncRemoteSSHDirectory(
       });
     });
 
-    const ignoredDirs = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'target', 'vendor']);
+    // Resolve home dir if root path given
+    const resolvedRemoteDir = await resolveRemotePath(sftp, conn, remoteDir || '/');
+
+    // Non-code & sensitive folders to strictly ignore
+    const ignoredDirs = new Set([
+      'node_modules',
+      '.git',
+      '.ssh',
+      'dist',
+      'build',
+      '.next',
+      '.cache',
+      'target',
+      'vendor',
+      '.turbo',
+      '__pycache__',
+      '.pytest_cache',
+      'venv',
+      '.venv',
+    ]);
+
+    // Ignored binary/media file extensions to avoid unnecessary heavy network transfers
+    const ignoredExtensions = new Set([
+      '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.svg', '.mp4', '.mp3',
+      '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
+      '.exe', '.bin', '.dll', '.so', '.dylib', '.iso', '.pdf', '.woff', '.woff2', '.ttf', '.eot',
+      // Strictly ignore credential/secret file extensions
+      '.key', '.pem', '.crt', '.p12', '.pfx', '.pkcs12', '.jks', '.keystore'
+    ]);
 
     async function walkAndDownload(rem: string, loc: string): Promise<void> {
       if (filesDownloaded >= maxFiles) return;
-      fs.mkdirSync(loc, { recursive: true });
+      try {
+        fs.mkdirSync(loc, { recursive: true });
+      } catch {
+        // ignore
+      }
 
-      const items: any[] = await new Promise((resolve, reject) => {
-        sftp.readdir(rem, (err, list) => {
-          if (err) return reject(err);
-          resolve(list);
+      let items: any[] = [];
+      try {
+        items = await new Promise((resolve, reject) => {
+          sftp.readdir(rem, (err, list) => {
+            if (err) return reject(err);
+            resolve(list);
+          });
         });
-      });
+      } catch (err: any) {
+        console.warn(`[SFTP] Cannot read remote directory ${rem}:`, err.message);
+        return;
+      }
 
       for (const item of items) {
         if (filesDownloaded >= maxFiles) break;
@@ -135,22 +200,40 @@ export async function syncRemoteSSHDirectory(
         const remoteItemPath = path.posix.join(rem, itemName);
         const localItemPath = path.join(loc, itemName);
 
+        // Check if path is in ignored list (e.g. storage/framework, bootstrap/cache)
+        const relFromRoot = path.posix.relative(resolvedRemoteDir, remoteItemPath);
+        if (
+          relFromRoot.startsWith('storage/framework') ||
+          relFromRoot.startsWith('storage/logs') ||
+          relFromRoot.startsWith('storage/debugbar') ||
+          relFromRoot.startsWith('bootstrap/cache')
+        ) {
+          continue;
+        }
+
         if (item.attrs.isDirectory()) {
           await walkAndDownload(remoteItemPath, localItemPath);
         } else if (item.attrs.isFile()) {
-          // Download source file
-          await new Promise<void>((res, rej) => {
-            sftp.fastGet(remoteItemPath, localItemPath, (err) => {
-              if (err) return rej(err);
-              res();
-            });
-          });
-          filesDownloaded++;
+          const ext = path.extname(itemName).toLowerCase();
+          // Skip large binary / media files; download all code, config, script, text files
+          if (!ignoredExtensions.has(ext)) {
+            try {
+              await new Promise<void>((res, rej) => {
+                sftp.fastGet(remoteItemPath, localItemPath, (err) => {
+                  if (err) return rej(err);
+                  res();
+                });
+              });
+              filesDownloaded++;
+            } catch (dlErr: any) {
+              console.warn(`[SFTP] Skipped downloading ${remoteItemPath}:`, dlErr.message);
+            }
+          }
         }
       }
     }
 
-    await walkAndDownload(remoteDir, localTargetDir);
+    await walkAndDownload(resolvedRemoteDir, localTargetDir);
     return { filesDownloaded, targetDir: localTargetDir };
   } finally {
     conn.end();

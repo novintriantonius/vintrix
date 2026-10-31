@@ -7,9 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun --filter '*' dev",
-    "build": "bun --filter '*' build",
-    "lint": "bun --filter '*' lint",
+    "dev": "bun --filter \"@vintrix/*\" dev",
+    "build": "bun --filter \"@vintrix/*\" build",
+    "lint": "bun --filter \"@vintrix/*\" lint",
+    "test": "bun test --coverage",
     "clean": "rm -rf node_modules apps/*/node_modules apps/*/dist packages/*/node_modules packages/*/dist"
   },
   "devDependencies": {

@@ -3,7 +3,7 @@ import { db } from '../db/client';
 import { codeSources, sshSourceDetails, gitSourceDetails, knowledgeNodes, knowledgeEdges } from '../db/schema';
 import { encryptCredential, decryptCredential } from '../services/crypto';
 import { testSSHConnection, listRemoteDirectory, syncRemoteSSHDirectory } from '../services/ssh';
-import { syncGitRepository } from '../services/git';
+import { syncGitRepository, testGitConnection } from '../services/git';
 import { scanCodebaseDirectory } from '../services/astScanner';
 import { reindexEvents } from '../services/reindexEvents';
 import { eq } from 'drizzle-orm';
@@ -14,25 +14,38 @@ import crypto from 'node:crypto';
 
 const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY ?? 'vintrix-dev-master-key-must-be-32-chars!!';
 
-/**
- * Helper to execute full AST sync and reindexing for a given source
- */
-export async function executeSourceReindex(sourceId: string): Promise<{
+// Helper to execute full AST sync and reindexing for a given source
+export async function executeSourceReindex(
+  sourceId: string,
+  targetWorkspaceId?: string,
+): Promise<{
   success: boolean;
   message: string;
+  totalFilesIndexed?: number;
   nodesScanned: number;
   edgesScanned: number;
 }> {
-  const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, sourceId));
-  if (!existing) {
-    throw new Error('Source not found');
+  // Query database - fail if DB is offline or source does not exist
+  let existing: any = null;
+  try {
+    const rows = await db.select().from(codeSources).where(eq(codeSources.id, sourceId));
+    existing = rows[0] || null;
+  } catch (err: any) {
+    console.error(`[executeSourceReindex] Database unavailable for source ${sourceId}:`, err.message);
+    throw new Error(`Database unavailable: ${err.message}`);
   }
+
+  if (!existing) {
+    throw new Error('Source not found in database');
+  }
+
+  const effectiveWorkspaceId = targetWorkspaceId || existing.workspaceId;
 
   reindexEvents.emitEvent({
     type: 'started',
     sourceId: existing.id,
     sourceName: existing.name,
-    workspaceId: existing.workspaceId,
+    workspaceId: effectiveWorkspaceId,
     message: `Starting codebase scan and AST indexing for ${existing.name}...`,
     progressPercent: 10,
     timestamp: new Date().toISOString(),
@@ -81,7 +94,7 @@ export async function executeSourceReindex(sourceId: string): Promise<{
       .from(sshSourceDetails)
       .where(eq(sshSourceDetails.codeSourceId, existing.id));
 
-    if (sshDetails && sshDetails.indexPaths && sshDetails.indexPaths.length > 0) {
+    if (sshDetails) {
       const password = sshDetails.encryptedPassword
         ? await decryptCredential(sshDetails.encryptedPassword, MASTER_KEY)
         : undefined;
@@ -92,97 +105,158 @@ export async function executeSourceReindex(sourceId: string): Promise<{
         ? await decryptCredential(sshDetails.encryptedPassphrase, MASTER_KEY)
         : undefined;
 
+      const sshOpts = {
+        host: sshDetails.host,
+        port: sshDetails.port,
+        username: sshDetails.username,
+        password,
+        privateKey,
+        passphrase,
+      };
+
+      // Use configured indexPaths if set, otherwise use remote home dir
+      const remoteDir =
+        sshDetails.indexPaths && sshDetails.indexPaths.length > 0
+          ? sshDetails.indexPaths[0]
+          : '/'; // listRemoteDirectory will resolve home dir via pwd
+
       try {
-        await syncRemoteSSHDirectory(
-          {
-            host: sshDetails.host,
-            port: sshDetails.port,
-            username: sshDetails.username,
-            password,
-            privateKey,
-            passphrase,
-          },
-          sshDetails.indexPaths[0],
-          cacheRoot,
-        );
-        targetScanDir = cacheRoot;
+        const syncResult = await syncRemoteSSHDirectory(sshOpts, remoteDir, cacheRoot);
+        if (syncResult.filesDownloaded > 0 || fs.existsSync(cacheRoot)) {
+          targetScanDir = cacheRoot;
+        } else {
+          throw new Error(`Tidak ada file source code yang ditemukan di ${remoteDir}`);
+        }
       } catch (sshErr: any) {
-        console.warn(`SSH sync warning (${sshDetails.host}):`, sshErr.message);
-        const customPath = path.resolve(rootRepoDir, sshDetails.indexPaths[0]);
-        if (fs.existsSync(customPath)) targetScanDir = customPath;
-      }
-    }
-  }
-
-  // Run AST parser
-  reindexEvents.emitEvent({
-    type: 'progress',
-    sourceId: existing.id,
-    sourceName: existing.name,
-    workspaceId: existing.workspaceId,
-    message: `Parsing multi-language AST trees in ${targetScanDir}...`,
-    progressPercent: 50,
-    timestamp: new Date().toISOString(),
-  });
-
-  const { nodes: scannedNodes, edges: scannedEdges } = scanCodebaseDirectory(targetScanDir);
-
-  if (scannedNodes.length > 0) {
-    // 1. Clear previous nodes & edges for this source
-    await db.delete(knowledgeNodes).where(eq(knowledgeNodes.codeSourceId, existing.id));
-
-    // 2. Insert scanned AST nodes
-    const insertedNodesMap = new Map<string, string>();
-
-    for (const node of scannedNodes) {
-      const [inserted] = await db
-        .insert(knowledgeNodes)
-        .values({
-          workspaceId: existing.workspaceId,
-          codeSourceId: existing.id,
-          label: node.label,
-          kind: node.kind,
-          filePath: node.filePath,
-          summary: node.summary,
-          metadata: JSON.stringify({
-            lines: node.lines,
-            methodCount: node.methodCount,
-            dependencyCount: node.dependencyCount,
-            tags: node.tags,
-            codeSnippet: node.codeSnippet,
-          }),
-        })
-        .returning();
-
-      if (inserted) {
-        insertedNodesMap.set(node.filePath, inserted.id);
-      }
-    }
-
-    // 3. Insert scanned cross-module edges
-    for (const edge of scannedEdges) {
-      const sourceId = insertedNodesMap.get(edge.sourceFilePath);
-      const targetId = insertedNodesMap.get(edge.targetFilePath);
-
-      if (sourceId && targetId && sourceId !== targetId) {
-        await db.insert(knowledgeEdges).values({
-          workspaceId: existing.workspaceId,
-          sourceNodeId: sourceId,
-          targetNodeId: targetId,
-          relationType: edge.relationType,
+        console.error(`[SSH Sync Failed] ${sshDetails.host}:`, sshErr.message);
+        reindexEvents.emitEvent({
+          type: 'error',
+          sourceId: existing.id,
+          sourceName: existing.name,
+          workspaceId: effectiveWorkspaceId,
+          message: `Gagal mengunduh direktori SSH (${sshDetails.host}): ${sshErr.message}`,
+          timestamp: new Date().toISOString(),
         });
+        throw new Error(`SSH sync failed: ${sshErr.message}`);
       }
     }
   }
 
-  await db
-    .update(codeSources)
-    .set({ isIndexed: true, lastIndexAt: new Date() })
-    .where(eq(codeSources.id, existing.id));
+  if (!targetScanDir || !fs.existsSync(targetScanDir)) {
+    reindexEvents.emitEvent({
+      type: 'error',
+      sourceId: existing.id,
+      sourceName: existing.name,
+      workspaceId: effectiveWorkspaceId,
+      message: 'Direktori target scan tidak ditemukan atau kosong.',
+      timestamp: new Date().toISOString(),
+    });
+    throw new Error('Direktori target scan tidak ditemukan atau gagal diunduh.');
+  }
+
+  // Run AST parser with file-by-file progress reporting
+  const { nodes: scannedNodes, edges: scannedEdges, totalIndexedFiles } = await scanCodebaseDirectory(
+    targetScanDir,
+    async (current, total, filePath) => {
+      const percent = Math.min(95, Math.round((current / Math.max(1, total)) * 80) + 10);
+      reindexEvents.emitEvent({
+        type: 'progress',
+        sourceId: existing.id,
+        sourceName: existing.name,
+        workspaceId: effectiveWorkspaceId,
+        message: `Indexing file ${current}/${total}: ${filePath}`,
+        progressPercent: percent,
+        currentFileIndex: current,
+        totalFiles: total,
+        currentFileName: filePath,
+        timestamp: new Date().toISOString(),
+      });
+      // Pacing delay (45ms per file) so user clearly sees the file-by-file counter
+      await new Promise((r) => setTimeout(r, 45));
+    }
+  );
+
+  // Persist nodes & edges to database if DB is reachable
+  try {
+    if (scannedNodes.length > 0) {
+      // 1. Clear previous nodes & edges for this source
+      await db.delete(knowledgeNodes).where(eq(knowledgeNodes.codeSourceId, existing.id));
+
+      // 2. Insert scanned AST nodes & sub-nodes
+      const insertedNodesMap = new Map<string, string>();
+
+      for (const node of scannedNodes) {
+        const [inserted] = await db
+          .insert(knowledgeNodes)
+          .values({
+            workspaceId: existing.workspaceId,
+            codeSourceId: existing.id,
+            label: node.label,
+            kind: node.kind,
+            nodeType: node.nodeType,
+            parentFilePath: node.parentFilePath || null,
+            filePath: node.filePath,
+            summary: node.summary,
+            metadata: JSON.stringify({
+              nodeKey: node.nodeKey,
+              nodeType: node.nodeType,
+              parentFilePath: node.parentFilePath,
+              lines: node.lines,
+              methodCount: node.methodCount,
+              dependencyCount: node.dependencyCount,
+              tags: node.tags,
+              codeSnippet: node.codeSnippet,
+            }),
+          })
+          .returning();
+
+        if (inserted) {
+          insertedNodesMap.set(node.nodeKey, inserted.id);
+        }
+      }
+
+      // 3. Insert scanned cross-module edges & parent-child contains edges
+      for (const edge of scannedEdges) {
+        const sourceId = insertedNodesMap.get(edge.sourceNodeKey);
+        const targetId = insertedNodesMap.get(edge.targetNodeKey);
+
+        if (sourceId && targetId && sourceId !== targetId) {
+          await db.insert(knowledgeEdges).values({
+            workspaceId: existing.workspaceId,
+            sourceNodeId: sourceId,
+            targetNodeId: targetId,
+            relationType: edge.relationType,
+          });
+        }
+      }
+    }
+
+    await db
+      .update(codeSources)
+      .set({
+        isIndexed: true,
+        lastIndexAt: new Date(),
+        totalFilesIndexed: totalIndexedFiles ?? 0,
+        totalNodesCount: scannedNodes.length,
+      })
+      .where(eq(codeSources.id, existing.id));
+  } catch (dbErr: any) {
+    console.error(`[executeSourceReindex] Database unavailable while saving nodes:`, dbErr.message);
+    reindexEvents.emitEvent({
+      type: 'error',
+      sourceId: existing.id,
+      sourceName: existing.name,
+      workspaceId: effectiveWorkspaceId,
+      message: `Database unavailable: gagal menyimpan node ke database (${dbErr.message})`,
+      timestamp: new Date().toISOString(),
+    });
+    throw new Error(`Database unavailable: ${dbErr.message}`);
+  }
 
   const resultPayload = {
     success: true,
-    message: `Re-indexing complete. Scanned ${scannedNodes.length} AST nodes and ${scannedEdges.length} dependency edges.`,
+    message: `Re-indexing complete. Scanned ${totalIndexedFiles} files, created ${scannedNodes.length} graph nodes and ${scannedEdges.length} dependency edges.`,
+    totalFilesIndexed: totalIndexedFiles,
     nodesScanned: scannedNodes.length,
     edgesScanned: scannedEdges.length,
   };
@@ -191,9 +265,10 @@ export async function executeSourceReindex(sourceId: string): Promise<{
     type: 'completed',
     sourceId: existing.id,
     sourceName: existing.name,
-    workspaceId: existing.workspaceId,
+    workspaceId: effectiveWorkspaceId,
     message: resultPayload.message,
     progressPercent: 100,
+    totalFilesIndexed: totalIndexedFiles,
     nodesScanned: scannedNodes.length,
     edgesScanned: scannedEdges.length,
     timestamp: new Date().toISOString(),
@@ -233,8 +308,11 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
           }
         };
 
-        const eventName = workspaceId ? `reindex:${workspaceId}` : 'reindex';
-        reindexEvents.on(eventName, eventListener);
+        // Listen to global reindex events
+        reindexEvents.on('reindex', eventListener);
+        if (workspaceId && workspaceId !== 'default') {
+          // Keep channel listener clean - already captured by global 'reindex'
+        }
 
         // Heartbeat comment every 15s to keep proxy/socket alive
         heartbeatInterval = setInterval(() => {
@@ -247,9 +325,8 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
       },
       cancel() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
-        const eventName = workspaceId ? `reindex:${workspaceId}` : 'reindex';
         if (eventListener) {
-          reindexEvents.off(eventName, eventListener);
+          reindexEvents.off('reindex', eventListener);
         }
       },
     });
@@ -258,7 +335,8 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     });
   }, {
@@ -267,58 +345,98 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
     }),
   })
   // ─── List sources for a workspace ───────────────────────────────────────────
-  .get('/workspace/:workspaceId', async ({ params }) => {
-    const sources = await db
-      .select({
-        id: codeSources.id,
-        workspaceId: codeSources.workspaceId,
-        name: codeSources.name,
-        type: codeSources.type,
-        isIndexed: codeSources.isIndexed,
-        lastIndexAt: codeSources.lastIndexAt,
-        createdAt: codeSources.createdAt,
-        updatedAt: codeSources.updatedAt,
-        // SSH details
-        host: sshSourceDetails.host,
-        port: sshSourceDetails.port,
-        sshIndexPaths: sshSourceDetails.indexPaths,
-        // Git details
-        repoUrl: gitSourceDetails.repoUrl,
-        branch: gitSourceDetails.branch,
-        gitIndexPaths: gitSourceDetails.indexPaths,
-      })
-      .from(codeSources)
-      .leftJoin(sshSourceDetails, eq(sshSourceDetails.codeSourceId, codeSources.id))
-      .leftJoin(gitSourceDetails, eq(gitSourceDetails.codeSourceId, codeSources.id))
-      .where(eq(codeSources.workspaceId, params.workspaceId));
+  .get('/workspace/:workspaceId', async ({ params, set }) => {
+    try {
+      const sources = await db
+        .select({
+          id: codeSources.id,
+          workspaceId: codeSources.workspaceId,
+          name: codeSources.name,
+          type: codeSources.type,
+          isIndexed: codeSources.isIndexed,
+          lastIndexAt: codeSources.lastIndexAt,
+          totalFilesIndexed: codeSources.totalFilesIndexed,
+          totalNodesCount: codeSources.totalNodesCount,
+          createdAt: codeSources.createdAt,
+          updatedAt: codeSources.updatedAt,
+          // SSH details
+          host: sshSourceDetails.host,
+          port: sshSourceDetails.port,
+          sshIndexPaths: sshSourceDetails.indexPaths,
+          // Git details
+          repoUrl: gitSourceDetails.repoUrl,
+          branch: gitSourceDetails.branch,
+          gitIndexPaths: gitSourceDetails.indexPaths,
+        })
+        .from(codeSources)
+        .leftJoin(sshSourceDetails, eq(sshSourceDetails.codeSourceId, codeSources.id))
+        .leftJoin(gitSourceDetails, eq(gitSourceDetails.codeSourceId, codeSources.id))
+        .where(eq(codeSources.workspaceId, params.workspaceId));
 
-    return sources.map((s) => ({
-      ...s,
-      indexPaths: s.type === 'ssh' ? s.sshIndexPaths ?? [] : s.gitIndexPaths ?? [],
-    }));
+      return sources.map((s) => ({
+        ...s,
+        indexPaths: s.type === 'ssh' ? s.sshIndexPaths ?? [] : s.gitIndexPaths ?? [],
+      }));
+    } catch (err: any) {
+      console.error(`[GET /sources/workspace/${params.workspaceId}] Error:`, err.message);
+      const isDbErr = err?.code === 'ECONNREFUSED' || err?.message?.includes('could not connect') || err?.message?.includes('database');
+      if (isDbErr) {
+        set.status = 503;
+        return { message: 'Database unavailable. Please start the database and try again.' };
+      }
+      return [];
+    }
   })
   // ─── Delete a source ─────────────────────────────────────────────────────────
   .delete('/:id', async ({ params, set }) => {
-    const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, params.id));
-    if (!existing) {
-      set.status = 404;
-      return { message: 'Source not found' };
-    }
-    await db.delete(codeSources).where(eq(codeSources.id, params.id));
-    return { success: true };
-  })
-  // ─── Trigger re-index with real AST Scanner ─────────────────────────────
-  .post('/:id/reindex', async ({ params, set }) => {
     try {
-      const result = await executeSourceReindex(params.id);
-      return result;
-    } catch (err: any) {
-      if (err.message === 'Source not found') {
+      const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, params.id));
+      if (!existing) {
         set.status = 404;
         return { message: 'Source not found' };
       }
+      await db.delete(codeSources).where(eq(codeSources.id, params.id));
+      return { success: true };
+    } catch (err: any) {
+      console.error(`[DELETE /sources/${params.id}] Database unavailable:`, err.message);
+      set.status = 503;
+      return { message: 'Database unavailable. Source cannot be deleted without a database connection.' };
+    }
+  })
+  // ─── Trigger re-index with real AST Scanner ─────────────────────────────
+  .post('/:id/reindex', async ({ params, query, set }) => {
+    try {
+      // Validate that source exists in database first
+      const [existing] = await db.select().from(codeSources).where(eq(codeSources.id, params.id));
+      if (!existing) {
+        set.status = 404;
+        return { message: 'Source not found' };
+      }
+
+      const targetWorkspaceId = (query as any)?.workspaceId || existing.workspaceId;
+
+      // Dispatch reindex in background so HTTP connection does not timeout on long SSH downloads
+      setTimeout(async () => {
+        try {
+          await executeSourceReindex(params.id, targetWorkspaceId);
+        } catch (err: any) {
+          console.error(`[executeSourceReindex:background] Error for ${params.id}:`, err.message);
+        }
+      }, 20);
+
+      return {
+        started: true,
+        sourceId: params.id,
+        message: 'Re-indexing initiated. Progress will stream via SSE.',
+      };
+    } catch (err: any) {
+      console.error(`[sources/:id/reindex] Error checking source ${params.id}:`, err);
+      if (err.message && (err.message.includes('Database unavailable') || err.code === 'ECONNREFUSED')) {
+        set.status = 503;
+        return { message: 'Database unavailable. Re-indexing cannot be performed without a database connection.' };
+      }
       set.status = 500;
-      return { message: err.message };
+      return { message: `Re-index failed: ${err.message || 'Unknown error'}` };
     }
   })
   // ─── Incoming Git Webhook Handler (GitHub / GitLab Push) ───────────────────
@@ -438,7 +556,7 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
     '/ssh/browse',
     async ({ body, set }) => {
       try {
-        const entries = await listRemoteDirectory(
+        const { entries, resolvedPath } = await listRemoteDirectory(
           {
             host: body.host,
             port: body.port,
@@ -450,17 +568,17 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
           body.path || '/'
         );
         return {
-          currentPath: body.path || '/',
+          currentPath: resolvedPath,
           directories: entries.filter((e) => e.type === 'directory').map((e) => e.name),
           files: entries.filter((e) => e.type === 'file').map((e) => e.name),
         };
       } catch (err: any) {
-        // Return friendly mock directories if remote network is not reachable in development
-        const base = body.path || '/var/www';
+        console.error('[SSH Browse Directory] Failed to browse remote host:', err.message);
+        set.status = 502;
         return {
-          currentPath: base,
-          directories: ['src', 'apps', 'packages', 'backend', 'frontend', 'server', 'client', 'config'],
-          files: ['package.json', 'README.md', 'tsconfig.json'],
+          error: `Gagal membaca direktori remote via SSH: ${err.message}`,
+          directories: [],
+          files: [],
         };
       }
     },
@@ -490,83 +608,37 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
         ? await encryptCredential(body.passphrase, MASTER_KEY)
         : null;
 
-      const [source] = await db
-        .insert(codeSources)
-        .values({
-          workspaceId: body.workspaceId,
-          name: body.name,
-          type: 'ssh',
-        })
-        .returning();
-
-      await db.insert(sshSourceDetails).values({
-        codeSourceId: source.id,
-        host: body.host,
-        port: body.port ?? 22,
-        username: body.username,
-        encryptedPassword,
-        encryptedPrivKey,
-        encryptedPassphrase,
-        indexPaths: body.indexPaths ?? [],
-      });
-
-      // Seed initial AST knowledge nodes for the new source
       try {
-        const [node1] = await db
-          .insert(knowledgeNodes)
+        const [source] = await db
+          .insert(codeSources)
           .values({
             workspaceId: body.workspaceId,
-            codeSourceId: source.id,
-            label: `${body.name}Service`,
-            kind: 'service',
-            filePath: `${body.indexPaths?.[0] || 'src'}/service.ts`,
-            summary: `Core business logic and AST parser component for ${body.name}`,
-            metadata: JSON.stringify({
-              lines: 'L1-L120',
-              methodCount: 4,
-              dependencyCount: 1,
-              codeSnippet: `export class ${body.name.replace(/[^a-zA-Z0-9]/g, '')}Service {\n  async handle() { return true; }\n}`,
-              tags: ['ssh', 'xerj-ast', 'service'],
-            }),
+            name: body.name,
+            type: 'ssh',
           })
           .returning();
 
-        const [node2] = await db
-          .insert(knowledgeNodes)
-          .values({
-            workspaceId: body.workspaceId,
-            codeSourceId: source.id,
-            label: `${body.name}Config`,
-            kind: 'database',
-            filePath: `${body.indexPaths?.[0] || 'src'}/config.ts`,
-            summary: `Environment and database connection config for ${body.name}`,
-            metadata: JSON.stringify({
-              lines: 'L1-L45',
-              methodCount: 2,
-              dependencyCount: 0,
-              codeSnippet: `export const config = {\n  host: '${body.host}',\n  port: ${body.port ?? 22}\n};`,
-              tags: ['config', 'ssh'],
-            }),
-          })
-          .returning();
+        await db.insert(sshSourceDetails).values({
+          codeSourceId: source.id,
+          host: body.host,
+          port: body.port ?? 22,
+          username: body.username,
+          encryptedPassword,
+          encryptedPrivKey,
+          encryptedPassphrase,
+          indexPaths: body.indexPaths ?? [],
+        });
 
-        if (node1 && node2) {
-          await db.insert(knowledgeEdges).values({
-            workspaceId: body.workspaceId,
-            sourceNodeId: node1.id,
-            targetNodeId: node2.id,
-            relationType: 'depends_on',
-          });
-        }
-      } catch {
-        // seeding fallback
+        return { id: source.id, name: source.name, type: 'ssh' };
+      } catch (dbErr: any) {
+        console.error('[sources/ssh POST] Database unavailable:', dbErr.message);
+        set.status = 503;
+        return { message: 'Database unavailable. Source cannot be added without a database connection.' };
       }
-
-      return { id: source.id, name: source.name, type: 'ssh' };
     },
     {
       body: t.Object({
-        workspaceId: t.String({ format: 'uuid' }),
+        workspaceId: t.String(),
         name: t.String(),
         host: t.String(),
         port: t.Number({ default: 22 }),
@@ -578,89 +650,147 @@ export const sourcesRouter = new Elysia({ prefix: '/sources' })
       }),
     },
   )
+  // Test Git repository connectivity & credentials
+  .post(
+    '/git/test',
+    async ({ body, set }) => {
+      try {
+        const result = await testGitConnection({
+          repoUrl: body.repoUrl.trim(),
+          branch: body.branch?.trim() || undefined,
+          token: body.token?.trim() || undefined,
+        });
+
+        if (!result.success) {
+          set.status = 400;
+          return {
+            success: false,
+            message: result.error || 'Failed to connect to Git repository',
+            error: result.error || 'Failed to connect to Git repository',
+          };
+        }
+
+        return {
+          success: true,
+          message: 'Connected to repository successfully.',
+          branches: result.branches,
+        };
+      } catch (err: any) {
+        set.status = 400;
+        const msg = err.message || 'Failed to connect to Git repository';
+        return { success: false, message: msg, error: msg };
+      }
+    },
+    {
+      body: t.Object({
+        repoUrl: t.String(),
+        branch: t.Optional(t.String()),
+        token: t.Optional(t.String()),
+      }),
+    },
+  )
   // ─── Create Git source ────────────────────────────────────────────────────────
   .post(
     '/git',
-    async ({ body }) => {
+    async ({ body, set }) => {
+      // Quick verification of git credentials before saving
+      const test = await testGitConnection({
+        repoUrl: body.repoUrl.trim(),
+        branch: body.branch?.trim() || undefined,
+        token: body.token?.trim() || undefined,
+      });
+
+      if (!test.success) {
+        set.status = 400;
+        const msg = test.error || 'Failed to authenticate with Git repository';
+        return { success: false, message: msg, error: msg };
+      }
+
       const encryptedToken = body.token
         ? await encryptCredential(body.token, MASTER_KEY)
         : null;
 
-      const [source] = await db
-        .insert(codeSources)
-        .values({
-          workspaceId: body.workspaceId,
-          name: body.name,
-          type: 'git',
-        })
-        .returning();
-
-      await db.insert(gitSourceDetails).values({
-        codeSourceId: source.id,
-        repoUrl: body.repoUrl,
-        branch: body.branch ?? 'main',
-        encryptedToken,
-        indexPaths: body.indexPaths ?? [],
-      });
-
-      // Seed initial AST knowledge nodes for the new Git source
       try {
-        const repoName = body.name.replace(/[^a-zA-Z0-9]/g, '');
-        const [node1] = await db
-          .insert(knowledgeNodes)
+        const [source] = await db
+          .insert(codeSources)
           .values({
             workspaceId: body.workspaceId,
-            codeSourceId: source.id,
-            label: `${repoName}Controller`,
-            kind: 'controller',
-            filePath: `${body.indexPaths?.[0] || 'src'}/controller.ts`,
-            summary: `REST API / Gateway controller for ${body.name}`,
-            metadata: JSON.stringify({
-              lines: 'L1-L85',
-              methodCount: 5,
-              dependencyCount: 2,
-              codeSnippet: `export class ${repoName}Controller {\n  async getHandler() { return { status: 'ok' }; }\n}`,
-              tags: ['git', 'xerj-ast', 'api'],
-            }),
+            name: body.name,
+            type: 'git',
           })
           .returning();
 
-        const [node2] = await db
-          .insert(knowledgeNodes)
-          .values({
-            workspaceId: body.workspaceId,
-            codeSourceId: source.id,
-            label: `${repoName}Repository`,
-            kind: 'database',
-            filePath: `${body.indexPaths?.[0] || 'src'}/repository.ts`,
-            summary: `Data persistence and repository layer for ${body.name}`,
-            metadata: JSON.stringify({
-              lines: 'L1-L110',
-              methodCount: 3,
-              dependencyCount: 1,
-              codeSnippet: `export class ${repoName}Repository {\n  async findOne(id: string) { return db.find(id); }\n}`,
-              tags: ['git', 'database'],
-            }),
-          })
-          .returning();
+        await db.insert(gitSourceDetails).values({
+          codeSourceId: source.id,
+          repoUrl: body.repoUrl,
+          branch: body.branch ?? 'main',
+          encryptedToken,
+          indexPaths: body.indexPaths ?? [],
+        });
 
-        if (node1 && node2) {
-          await db.insert(knowledgeEdges).values({
-            workspaceId: body.workspaceId,
-            sourceNodeId: node1.id,
-            targetNodeId: node2.id,
-            relationType: 'calls',
-          });
+        // Seed initial AST knowledge nodes for the new Git source
+        try {
+          const repoName = body.name.replace(/[^a-zA-Z0-9]/g, '');
+          const [node1] = await db
+            .insert(knowledgeNodes)
+            .values({
+              workspaceId: body.workspaceId,
+              codeSourceId: source.id,
+              label: `${repoName}Controller`,
+              kind: 'controller',
+              filePath: `${body.indexPaths?.[0] || 'src'}/controller.ts`,
+              summary: `REST API / Gateway controller for ${body.name}`,
+              metadata: JSON.stringify({
+                lines: 'L1-L85',
+                methodCount: 5,
+                dependencyCount: 2,
+                codeSnippet: `export class ${repoName}Controller {\n  async getHandler() { return { status: 'ok' }; }\n}`,
+                tags: ['git', 'xerj-ast', 'api'],
+              }),
+            })
+            .returning();
+
+          const [node2] = await db
+            .insert(knowledgeNodes)
+            .values({
+              workspaceId: body.workspaceId,
+              codeSourceId: source.id,
+              label: `${repoName}Repository`,
+              kind: 'database',
+              filePath: `${body.indexPaths?.[0] || 'src'}/repository.ts`,
+              summary: `Data persistence and repository layer for ${body.name}`,
+              metadata: JSON.stringify({
+                lines: 'L1-L110',
+                methodCount: 3,
+                dependencyCount: 1,
+                codeSnippet: `export class ${repoName}Repository {\n  async findOne(id: string) { return db.find(id); }\n}`,
+                tags: ['git', 'database'],
+              }),
+            })
+            .returning();
+
+          if (node1 && node2) {
+            await db.insert(knowledgeEdges).values({
+              workspaceId: body.workspaceId,
+              sourceNodeId: node1.id,
+              targetNodeId: node2.id,
+              relationType: 'calls',
+            });
+          }
+        } catch {
+          // seeding fallback
         }
-      } catch {
-        // seeding fallback
-      }
 
-      return { id: source.id, name: source.name, type: 'git' };
+        return { id: source.id, name: source.name, type: 'git' };
+      } catch (dbErr: any) {
+        console.error('[sources/git POST] Database unavailable:', dbErr.message);
+        set.status = 503;
+        return { message: 'Database unavailable. Source cannot be added without a database connection.' };
+      }
     },
     {
       body: t.Object({
-        workspaceId: t.String({ format: 'uuid' }),
+        workspaceId: t.String(),
         name: t.String(),
         repoUrl: t.String(),
         branch: t.Optional(t.String()),

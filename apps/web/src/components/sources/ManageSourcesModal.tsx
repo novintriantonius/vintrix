@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   GitBranch,
   Terminal,
@@ -23,6 +23,7 @@ export interface CodeSourceItem {
   status: 'synced' | 'indexing' | 'error';
   lastSyncedAt: string;
   nodesCount: number;
+  filesIndexedCount?: number;
 }
 
 export const INITIAL_WORKSPACE_SOURCES: CodeSourceItem[] = [
@@ -61,10 +62,18 @@ export const INITIAL_WORKSPACE_SOURCES: CodeSourceItem[] = [
   },
 ];
 
+export interface SourceProgressInfo {
+  current: number;
+  total: number;
+  percent: number;
+  currentFileName?: string;
+}
+
 interface ManageSourcesModalProps {
   isOpen: boolean;
   onClose: () => void;
   sources: CodeSourceItem[];
+  reindexProgress?: Record<string, SourceProgressInfo>;
   onOpenAddModal: () => void;
   onDeleteSource: (sourceId: string) => void;
   onTriggerReindex: (sourceId: string) => void;
@@ -74,6 +83,7 @@ export function ManageSourcesModal({
   isOpen,
   onClose,
   sources,
+  reindexProgress = {},
   onOpenAddModal,
   onDeleteSource,
   onTriggerReindex,
@@ -81,17 +91,25 @@ export function ManageSourcesModal({
   const [reindexingId, setReindexingId] = useState<string | null>(null);
   const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
 
+  useEffect(() => {
+    // Only clear reindexingId if reindexing is no longer marked active
+    const currentSource = sources.find((s) => s.id === reindexingId);
+    if (reindexingId && currentSource && currentSource.status !== 'indexing' && !reindexProgress[reindexingId]) {
+      const timer = setTimeout(() => {
+        setReindexingId(null);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [reindexingId, reindexProgress, sources]);
+
   const handleSync = (id: string) => {
     setReindexingId(id);
     onTriggerReindex(id);
-    setTimeout(() => {
-      setReindexingId(null);
-    }, 2500);
   };
 
   const copyWebhookUrl = (id: string) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    const apiUrl = origin.replace(':3000', ':3001');
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const apiUrl = origin.includes(':5173') ? origin : origin.replace(':3000', ':3001');
     const webhookUrl = `${apiUrl}/sources/webhook?sourceId=${id}`;
     navigator.clipboard.writeText(webhookUrl);
     setCopiedWebhookId(id);
@@ -102,7 +120,7 @@ export function ManageSourcesModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      maxWidth="2xl"
+      maxWidth="4xl"
       icon={<FolderGit2 size={18} />}
       title="Manage Workspace Sources"
       subtitle="Review, re-index, or remove linked Git repositories and SSH/SFTP endpoints."
@@ -132,14 +150,55 @@ export function ManageSourcesModal({
           </div>
         ) : (
           sources.map((source) => {
-            const isSyncing = reindexingId === source.id;
+            const progress = reindexProgress[source.id];
+            const hasActiveProgress = Boolean(progress);
+            // Only show syncing state if user explicitly triggered reindex OR progress is actively streaming
+            const isSyncing = (reindexingId === source.id && source.status === 'indexing') || hasActiveProgress;
 
             return (
               <div
                 key={source.id}
-                className="p-3.5 bg-[#050912] border border-white/[0.06] hover:border-white/[0.12] rounded-xl transition-all flex items-start justify-between gap-4"
+                className="relative p-4 bg-[#050912] border border-white/[0.06] hover:border-white/[0.12] rounded-xl transition-all flex flex-col justify-between"
               >
-                <div className="space-y-1.5 flex-1 min-w-0">
+                {/* Fixed Top-Right Action Buttons */}
+                <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-10">
+                  {source.type === 'git' && (
+                    <button
+                      type="button"
+                      onClick={() => copyWebhookUrl(source.id)}
+                      title="Copy Git Webhook URL for GitHub/GitLab automated push re-indexing"
+                      aria-label="Copy Webhook URL"
+                      className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-sky-300 transition-colors border border-white/[0.06] flex items-center gap-1"
+                    >
+                      {copiedWebhookId === source.id ? (
+                        <Check size={13} className="text-emerald-400" />
+                      ) : (
+                        <Webhook size={13} />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleSync(source.id)}
+                    disabled={isSyncing}
+                    title="Trigger AST Re-index"
+                    aria-label={`Re-index ${source.name}`}
+                    className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white transition-colors border border-white/[0.06] disabled:opacity-50"
+                  >
+                    <RefreshCw size={13} className={isSyncing ? 'animate-spin text-sky-400' : ''} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteSource(source.id)}
+                    title="Delete Source"
+                    aria-label={`Delete ${source.name}`}
+                    className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors border border-rose-500/20"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 w-full pr-28">
                   <div className="flex items-center gap-2">
                     <span className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-slate-300">
                       {source.type === 'git' ? (
@@ -163,77 +222,78 @@ export function ManageSourcesModal({
                     {source.location}
                   </div>
 
+                  {source.indexPaths && source.indexPaths.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {source.indexPaths.map((p, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] text-slate-300 border border-white/[0.06]"
+                        >
+                          <span className="text-sky-400">/</span>
+                          {p.startsWith('/') ? p.slice(1) : p}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 pt-1">
                     <span className="flex items-center gap-1.5">
-                      {isSyncing || source.status === 'indexing' ? (
+                      {isSyncing ? (
                         <>
                           <RefreshCw size={12} className="text-amber-400 animate-spin" />
-                          <span className="text-amber-300 font-medium">Indexing AST & Parsing AST...</span>
+                          <span className="text-amber-300 font-medium">
+                            {progress
+                              ? `Indexing ${progress.current} / ${progress.total} files (${progress.percent}%)`
+                              : 'Connecting & scanning repository...'}
+                          </span>
                         </>
                       ) : (
                         <>
                           <CheckCircle2 size={12} className="text-emerald-400" />
-                          <span className="text-emerald-400">{source.status === 'synced' ? 'Indexed' : 'Syncing'}</span>
+                          <span className="text-emerald-400">Indexed</span>
                         </>
                       )}
                     </span>
                     <span>•</span>
                     <span className="font-mono text-[10px]">{source.lastSyncedAt}</span>
-                    {source.nodesCount > 0 && (
+                    {!isSyncing && (
                       <>
                         <span>•</span>
-                        <span className="font-mono text-[10px] text-sky-400">{source.nodesCount} indexed components</span>
+                        <span className="font-mono text-[10px] text-sky-400 font-medium">
+                          {source.nodesCount} nodes
+                        </span>
+                        <span>•</span>
+                        <span className="font-mono text-[10px] text-emerald-400/90 font-medium">
+                          {source.filesIndexedCount ?? 0} files indexed
+                        </span>
                       </>
                     )}
                   </div>
-                  {(isSyncing || source.status === 'indexing') && (
+                  {isSyncing && (
                     <div className="pt-2">
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mb-1">
-                        <span>AST Tree-sitter tokenization</span>
-                        <span className="text-amber-300">In progress...</span>
+                        <span className="truncate max-w-[280px] text-slate-300 flex items-center gap-1.5">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                          {progress?.currentFileName
+                            ? `${progress.currentFileName}`
+                            : 'Scanning codebase AST...'}
+                        </span>
+                        <span className="text-amber-300 shrink-0 font-medium font-mono">
+                          {progress
+                            ? `${progress.current}/${progress.total} (${progress.percent}%)`
+                            : 'Preparing AST scan...'}
+                        </span>
                       </div>
                       <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full animate-pulse w-3/4" />
+                        <div
+                          className="h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full transition-all duration-200"
+                          style={{
+                            width: `${progress?.percent ?? 8}%`,
+                          }}
+                        />
                       </div>
                     </div>
                   )}
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {source.type === 'git' && (
-                    <button
-                      type="button"
-                      onClick={() => copyWebhookUrl(source.id)}
-                      title="Copy Git Webhook URL for GitHub/GitLab automated push re-indexing"
-                      aria-label="Copy Webhook URL"
-                      className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-sky-300 transition-colors border border-white/[0.06] flex items-center gap-1"
-                    >
-                      {copiedWebhookId === source.id ? (
-                        <Check size={13} className="text-emerald-400" />
-                      ) : (
-                        <Webhook size={13} />
-                      )}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleSync(source.id)}
-                    disabled={isSyncing}
-                    title="Trigger AST Re-index"
-                    aria-label={`Re-index ${source.name}`}
-                    className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white transition-colors border border-white/[0.06] disabled:opacity-50"
-                  >
-                    <RefreshCw size={13} className={isSyncing ? 'animate-spin text-sky-400' : ''} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteSource(source.id)}
-                    title="Delete Source"
-                    aria-label={`Delete ${source.name}`}
-                    className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors border border-rose-500/20"
-                  >
-                    <Trash2 size={13} />
-                  </button>
                 </div>
               </div>
             );

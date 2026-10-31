@@ -7,8 +7,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://127.0.0.1:3001',
         changeOrigin: true,
+        // Disable timeout & buffering for SSE streaming
+        timeout: 0,
       },
     },
   },

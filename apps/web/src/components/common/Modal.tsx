@@ -7,7 +7,7 @@ interface ModalProps {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   icon?: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | 'full';
   children: React.ReactNode;
   footer?: React.ReactNode;
 }
@@ -18,6 +18,10 @@ const MAX_WIDTH_MAP = {
   lg: 'max-w-lg',
   xl: 'max-w-xl',
   '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
+  '5xl': 'max-w-5xl',
+  full: 'max-w-[95vw] lg:max-w-5xl',
 };
 
 export function Modal({
@@ -53,11 +57,11 @@ export function Modal({
           onClose();
         }
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
     >
       <div
         ref={modalRef}
-        className={`bg-[#080d16] border border-white/[0.08] rounded-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} overflow-hidden shadow-2xl flex flex-col relative my-auto`}
+        className={`bg-[#080d16] border border-white/[0.08] rounded-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[88vh] overflow-hidden shadow-2xl flex flex-col relative my-auto`}
       >
         {/* Header */}
         <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between shrink-0">

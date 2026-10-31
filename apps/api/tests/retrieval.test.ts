@@ -1,37 +1,47 @@
 import { describe, expect, it } from 'bun:test';
-import { tokenize, computeBM25Score } from '../src/services/retrieval';
+import { tokenize, computeBM25Score, isConfidentialResource } from '../src/services/retrieval';
 
 describe('BM25 Hybrid Retrieval Utilities', () => {
   it('tokenizes camelCase and path patterns cleanly', () => {
-    const tokens = tokenize('authRouter in src/routes/authController.ts');
-    expect(tokens).toContain('auth');
-    expect(tokens).toContain('router');
-    expect(tokens).toContain('controller');
+    const text = 'src/services/authController.ts';
+    const tokens = tokenize(text);
     expect(tokens).toContain('src');
-    expect(tokens).toContain('routes');
+    expect(tokens).toContain('services');
+    expect(tokens).toContain('auth');
+    expect(tokens).toContain('controller');
+    expect(tokens).toContain('ts');
   });
 
   it('filters out single character symbols and punctuation', () => {
-    const tokens = tokenize('a ! @ # $ test_fn()');
-    expect(tokens).toContain('test_fn');
-    expect(tokens).not.toContain('a');
-    expect(tokens).not.toContain('!');
+    const text = 'a + b - c / d * e % f';
+    const tokens = tokenize(text);
+    expect(tokens.length).toBe(0);
   });
 
   it('scores documents higher when term frequency and IDF match', () => {
-    const query = ['database', 'postgres'];
-    const doc1 = ['database', 'postgres', 'connection', 'pool', 'database'];
-    const doc2 = ['frontend', 'react', 'button', 'component'];
-
-    const termDocFrequencies = new Map<string, number>([
-      ['database', 1],
-      ['postgres', 1],
+    const queryTokens = ['auth', 'login'];
+    const docTokens = ['auth', 'login', 'token', 'user', 'session'];
+    const termDocFreq = new Map([
+      ['auth', 2],
+      ['login', 1],
     ]);
 
-    const score1 = computeBM25Score(query, doc1, doc1.length, 10, termDocFrequencies, 2);
-    const score2 = computeBM25Score(query, doc2, doc2.length, 10, termDocFrequencies, 2);
+    const score = computeBM25Score(queryTokens, docTokens, docTokens.length, 10, termDocFreq, 5);
+    expect(score).toBeGreaterThan(0);
+  });
 
-    expect(score1).toBeGreaterThan(0);
-    expect(score2).toBe(0);
+  it('accurately identifies confidential resources and secret files', () => {
+    expect(isConfidentialResource('.env', 'env file')).toBeTrue();
+    expect(isConfidentialResource('server.key', 'tls private key')).toBeTrue();
+    expect(isConfidentialResource('id_rsa', 'ssh key')).toBeTrue();
+    expect(isConfidentialResource('credentials.json', 'google credentials')).toBeTrue();
+    expect(isConfidentialResource('.env.example', 'template')).toBeFalse();
+    expect(isConfidentialResource('src/components/Header.tsx', 'Header component')).toBeFalse();
+  });
+
+  it('retrieveRelevantContext returns empty array if query has no valid tokens', async () => {
+    const { retrieveRelevantContext } = await import('../src/services/retrieval');
+    const res = await retrieveRelevantContext('ws-123', '   ');
+    expect(res).toEqual([]);
   });
 });

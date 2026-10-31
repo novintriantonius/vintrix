@@ -47,6 +47,8 @@ export const codeSources = pgTable('code_sources', {
   type:        text('type').notNull(), // 'ssh' | 'git'
   isIndexed:   boolean('is_indexed').default(false).notNull(),
   lastIndexAt: timestamp('last_index_at'),
+  totalFilesIndexed: integer('total_files_indexed').default(0).notNull(),
+  totalNodesCount:   integer('total_nodes_count').default(0).notNull(),
   createdAt:   timestamp('created_at').defaultNow().notNull(),
   updatedAt:   timestamp('updated_at').defaultNow().notNull(),
 });
@@ -115,15 +117,17 @@ export const chatMessages = pgTable('chat_messages', {
 
 // ─── Codebase Knowledge Nodes ─────────────────────────────────────────────────
 export const knowledgeNodes = pgTable('knowledge_nodes', {
-  id:           uuid('id').primaryKey().defaultRandom(),
-  workspaceId:  uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  codeSourceId: uuid('code_source_id').references(() => codeSources.id, { onDelete: 'cascade' }),
-  label:        text('label').notNull(),
-  kind:         text('kind').notNull(), // 'controller' | 'service' | 'database' | 'security' | 'gateway'
-  filePath:     text('file_path').notNull(),
-  summary:      text('summary'),
-  metadata:     text('metadata'), // JSON stringified node details / AST stats
-  createdAt:    timestamp('created_at').defaultNow().notNull(),
+  id:             uuid('id').primaryKey().defaultRandom(),
+  workspaceId:    uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  codeSourceId:   uuid('code_source_id').references(() => codeSources.id, { onDelete: 'cascade' }),
+  label:          text('label').notNull(),
+  kind:           text('kind').notNull(), // 'controller' | 'service' | 'database' | 'security' | 'gateway'
+  nodeType:       text('node_type').default('file').notNull(), // 'file' | 'function' | 'class' | 'config' | 'document' | 'service' | 'pipeline' | 'schema' | 'endpoint' | 'resource'
+  parentFilePath: text('parent_file_path'), // for sub-nodes (functions, classes)
+  filePath:       text('file_path').notNull(),
+  summary:        text('summary'),
+  metadata:       text('metadata'), // JSON stringified node details / AST stats
+  createdAt:      timestamp('created_at').defaultNow().notNull(),
 });
 
 // ─── Codebase Knowledge Edges (AST Dependency & Call Graphs) ──────────────────
@@ -132,7 +136,7 @@ export const knowledgeEdges = pgTable('knowledge_edges', {
   workspaceId:  uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   sourceNodeId: uuid('source_node_id').notNull().references(() => knowledgeNodes.id, { onDelete: 'cascade' }),
   targetNodeId: uuid('target_node_id').notNull().references(() => knowledgeNodes.id, { onDelete: 'cascade' }),
-  relationType: text('relation_type').default('calls').notNull(), // 'calls' | 'imports' | 'implements' | 'depends_on'
+  relationType: text('relation_type').default('calls').notNull(), // 'calls' | 'imports' | 'implements' | 'depends_on' | 'contains'
   createdAt:    timestamp('created_at').defaultNow().notNull(),
 });
 

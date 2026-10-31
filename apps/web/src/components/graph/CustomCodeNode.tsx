@@ -9,13 +9,34 @@ import {
   CheckCircle,
   Flame,
   WarningOctagon,
+  Function,
+  Cube,
+  Gear,
+  FileText,
+  Stack,
+  GitFork,
+  Table,
 } from '@phosphor-icons/react';
 
 export type NodeKind = 'controller' | 'service' | 'database' | 'security' | 'gateway';
+export type GraphNodeType =
+  | 'file'
+  | 'function'
+  | 'class'
+  | 'config'
+  | 'document'
+  | 'service'
+  | 'pipeline'
+  | 'schema'
+  | 'endpoint'
+  | 'resource'
+  | 'module';
 
 export interface CodeNodeData {
   label: string;
   kind: NodeKind;
+  nodeType?: GraphNodeType;
+  parentFilePath?: string;
   sourceName?: string; // Repository or Server identifier (e.g., 'frontend-repo', 'backend-repo', 'ssh-prod')
   sourceType?: 'git' | 'ssh';
   filePath: string;
@@ -37,6 +58,83 @@ export interface CodeNodeData {
   circularCycle?: string[];
   [key: string]: unknown;
 }
+
+const TYPE_CONFIG: Record<
+  GraphNodeType,
+  {
+    icon: any;
+    label: string;
+    dotBg: string;
+    badgeBg: string;
+  }
+> = {
+  function: {
+    icon: Function,
+    label: 'FN',
+    dotBg: 'bg-purple-400',
+    badgeBg: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+  },
+  class: {
+    icon: Cube,
+    label: 'CLASS',
+    dotBg: 'bg-indigo-400',
+    badgeBg: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
+  },
+  config: {
+    icon: Gear,
+    label: 'CONFIG',
+    dotBg: 'bg-zinc-400',
+    badgeBg: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
+  },
+  document: {
+    icon: FileText,
+    label: 'DOC',
+    dotBg: 'bg-cyan-400',
+    badgeBg: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+  },
+  service: {
+    icon: Stack,
+    label: 'INFRA',
+    dotBg: 'bg-teal-400',
+    badgeBg: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
+  },
+  pipeline: {
+    icon: GitFork,
+    label: 'CI/CD',
+    dotBg: 'bg-orange-400',
+    badgeBg: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
+  },
+  schema: {
+    icon: Table,
+    label: 'SCHEMA',
+    dotBg: 'bg-amber-400',
+    badgeBg: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+  },
+  endpoint: {
+    icon: Cpu,
+    label: 'API',
+    dotBg: 'bg-sky-400',
+    badgeBg: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+  },
+  resource: {
+    icon: Stack,
+    label: 'IAC',
+    dotBg: 'bg-rose-400',
+    badgeBg: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+  },
+  file: {
+    icon: Code,
+    label: 'FILE',
+    dotBg: 'bg-emerald-400',
+    badgeBg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  },
+  module: {
+    icon: Stack,
+    label: 'MODULE',
+    dotBg: 'bg-violet-400',
+    badgeBg: 'bg-violet-500/10 text-violet-300 border-violet-500/30',
+  },
+};
 
 const KIND_CONFIG: Record<
   NodeKind,
@@ -87,7 +185,11 @@ const KIND_CONFIG: Record<
 
 export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
   const nodeData = data as unknown as CodeNodeData;
-  const config = KIND_CONFIG[nodeData.kind] || KIND_CONFIG.service;
+  const isSubNode = !!nodeData.parentFilePath;
+  // If kind is defined and not service, prefer KIND_CONFIG for clear architectural role badge (DATABASE, API, SECURITY, etc.)
+  const kindConfig = KIND_CONFIG[nodeData.kind];
+  const typeConfig = nodeData.nodeType ? TYPE_CONFIG[nodeData.nodeType] : null;
+  const config = (nodeData.kind && nodeData.kind !== 'service' && kindConfig) ? kindConfig : (typeConfig || kindConfig || KIND_CONFIG.service);
   const isHot = nodeData.hotspotScore !== undefined && nodeData.hotspotScore >= 4;
   const isCircular = nodeData.isCircular;
   const isDimmed = nodeData.isDimmed && !selected;
@@ -95,11 +197,15 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
 
   return (
     <div
-      className={`relative w-[260px] rounded-xl transition-all duration-300 text-left select-none group cursor-pointer ${
+      className={`relative rounded-xl transition-all duration-300 text-left select-none group cursor-pointer ${
+        isSubNode ? 'w-[230px]' : 'w-[260px]'
+      } ${
         isDimmed
           ? 'opacity-25 grayscale hover:grayscale-0 hover:opacity-100 border border-white/[0.04] bg-[#080d16]/60'
           : selected
           ? 'ring-2 ring-sky-400 shadow-[0_0_30px_rgba(56,189,248,0.35)] bg-[#0c1424] border-transparent'
+          : isSubNode
+          ? 'border border-purple-500/30 bg-[#0e0c18]/90 hover:bg-[#141024] shadow-md shadow-purple-950/20'
           : isCircular
           ? 'ring-1 ring-rose-500/80 border-rose-500/60 bg-[#160a0f] shadow-[0_0_20px_rgba(244,63,94,0.22)]'
           : blastRole === 'upstream'
@@ -111,6 +217,14 @@ export const CustomCodeNode = memo(({ data, selected }: NodeProps) => {
           : 'border border-white/[0.08] hover:border-white/20 bg-[#080d16]/95 hover:bg-[#0b121f] shadow-lg shadow-black/40'
       }`}
     >
+      {/* Sub-node parent indicator */}
+      {isSubNode && (
+        <div className="absolute -top-2 left-3 z-10">
+          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-full font-bold bg-purple-950 text-purple-300 border border-purple-500/40">
+            SUB-NODE
+          </span>
+        </div>
+      )}
       {/* Blast role badge banner */}
       {blastRole && blastRole !== 'target' && (
         <div className="absolute -top-2.5 right-3 z-10">

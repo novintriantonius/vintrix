@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ShieldCheck, Loader2 } from 'lucide-react';
-import { authApi, type AuthUser } from '../../services/api';
+import type { AuthUser } from '../../services/api';
 import { Modal } from '../common';
 
 interface AuthModalProps {
@@ -9,45 +9,15 @@ interface AuthModalProps {
   onSuccess: (user: AuthUser, token: string) => void;
 }
 
-export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
+export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null);
-  const [customEmail, setCustomEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleOAuthLogin = async (provider: 'google' | 'github') => {
+  const handleOAuthLogin = (provider: 'google' | 'github') => {
     setLoadingProvider(provider);
     setErrorMsg(null);
-    try {
-      if (provider === 'google' && !customEmail.trim()) {
-        // Redirect directly to real Google OAuth flow
-        window.location.href = '/api/v1/auth/google';
-        return;
-      }
-
-      const email = customEmail.trim()
-        ? customEmail.trim()
-        : provider === 'google'
-          ? 'developer@gmail.com'
-          : 'engineer@github.com';
-
-      const res = await authApi.signInWithOAuth({
-        provider,
-        email,
-        name: customEmail.trim()
-          ? customEmail.split('@')[0]
-          : provider === 'google'
-            ? 'Google Developer'
-            : 'GitHub Engineer',
-      });
-      localStorage.setItem('vintrix_token', res.token);
-      localStorage.setItem('vintrix_user', JSON.stringify(res.user));
-      onSuccess(res.user, res.token);
-      onClose();
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
-    } finally {
-      setLoadingProvider(null);
-    }
+    // Redirect directly to backend OAuth authentication endpoints
+    window.location.href = `/api/v1/auth/${provider}`;
   };
 
   return (
@@ -56,7 +26,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       onClose={onClose}
       maxWidth="sm"
       title="Sign in to Vintrix"
-      subtitle="Passwordless authentication. No passwords needed."
+      subtitle="Continue with your existing developer account."
       icon={
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center shadow-md shadow-sky-500/20">
           <span className="font-bold text-xs text-slate-950 font-mono">VX</span>
@@ -76,19 +46,6 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           </div>
         )}
 
-        <div>
-          <label className="block text-[11px] font-medium text-slate-400 mb-1">
-            Sign-in Account Email (Optional)
-          </label>
-          <input
-            type="email"
-            value={customEmail}
-            onChange={(e) => setCustomEmail(e.target.value)}
-            placeholder="you@company.com or leave blank"
-            className="w-full bg-[#0a101d] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono transition-colors"
-          />
-        </div>
-
         {/* OAuth Buttons */}
         <div className="space-y-2.5">
           {/* Google OAuth Button */}
@@ -96,7 +53,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             type="button"
             disabled={loadingProvider !== null}
             onClick={() => handleOAuthLogin('google')}
-            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-medium text-xs transition-all active:scale-[0.98] disabled:opacity-60 shadow-sm"
+            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-medium text-xs transition-all active:scale-[0.98] disabled:opacity-60 shadow-sm cursor-pointer"
           >
             {loadingProvider === 'google' ? (
               <Loader2 size={16} className="animate-spin text-slate-800" />
@@ -128,7 +85,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             type="button"
             disabled={loadingProvider !== null}
             onClick={() => handleOAuthLogin('github')}
-            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-[#161b22] hover:bg-[#21262d] text-white border border-white/[0.1] font-medium text-xs transition-all active:scale-[0.98] disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-[#161b22] hover:bg-[#21262d] text-white border border-white/[0.1] font-medium text-xs transition-all active:scale-[0.98] disabled:opacity-60 shadow-sm cursor-pointer"
           >
             {loadingProvider === 'github' ? (
               <Loader2 size={16} className="animate-spin text-white" />

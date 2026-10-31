@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from './schema';
 
 const connectionString =
-  process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/vintrix';
+  process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/vintrix';
 
 const client = postgres(connectionString, {
   max: 10,

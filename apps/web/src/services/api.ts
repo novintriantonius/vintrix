@@ -12,9 +12,9 @@ async function request<T>(
   const token = localStorage.getItem('vintrix_token');
   const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-  // Setup 8s timeout to prevent UI hanging indefinitely on slow DB connections
+  // Setup 25s timeout for git clone/network operations
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
   try {
     const res = await fetch(`${BASE}${path}`, {
@@ -26,7 +26,12 @@ async function request<T>(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error((err as { message?: string }).message ?? res.statusText);
+      const errorMessage =
+        (err as { error?: string; message?: string }).error ||
+        (err as { message?: string }).message ||
+        res.statusText;
+      console.error(`[API Error] ${options?.method || 'GET'} ${path} returned status ${res.status}:`, errorMessage);
+      throw new Error(errorMessage);
     }
     return res.json() as Promise<T>;
   } catch (err: unknown) {
@@ -96,6 +101,8 @@ export interface CodeSource {
   type: 'ssh' | 'git';
   isIndexed: boolean;
   lastIndexAt: string | null;
+  totalFilesIndexed?: number;
+  totalNodesCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -113,6 +120,15 @@ export interface CodeSourceWithDetails extends CodeSource {
 export const sourcesApi = {
   list: (workspaceId: string) =>
     request<CodeSourceWithDetails[]>(`/sources/workspace/${workspaceId}`),
+
+  testGit: (body: {
+    repoUrl: string;
+    branch?: string;
+    token?: string;
+  }) => request<{ success: boolean; message?: string; branches?: string[]; error?: string }>(
+    '/sources/git/test',
+    { method: 'POST', body: JSON.stringify(body) },
+  ),
 
   addGit: (body: {
     workspaceId: string;
@@ -166,14 +182,20 @@ export const sourcesApi = {
     { method: 'POST', body: JSON.stringify(body) },
   ),
 
-  triggerReindex: (sourceId: string) =>
-    request<{ success: boolean }>(`/sources/${sourceId}/reindex`, { method: 'POST' }),
+  triggerReindex: (sourceId: string, workspaceId?: string) =>
+    request<{ success: boolean }>(`/sources/${sourceId}/reindex${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''}`, { method: 'POST' }),
 
   delete: (sourceId: string) =>
     request<{ success: boolean }>(`/sources/${sourceId}`, { method: 'DELETE' }),
 
   subscribeEvents: (workspaceId: string, onEvent: (event: any) => void) => {
-    const url = `${BASE}/sources/events?workspaceId=${encodeURIComponent(workspaceId)}`;
+    if (!workspaceId) return () => {};
+
+    // In local dev, connect directly to backend port 3001 to bypass Vite dev server proxy SSE buffer/abort
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const baseUrl = isLocalDev ? 'http://localhost:3001/api/v1' : BASE;
+
+    const url = `${baseUrl}/sources/events?workspaceId=${encodeURIComponent(workspaceId)}`;
     const eventSource = new EventSource(url);
 
     eventSource.onmessage = (e) => {
@@ -183,6 +205,10 @@ export const sourcesApi = {
       } catch {
         // ignore non-json
       }
+    };
+
+    eventSource.onerror = () => {
+      // Browser EventSource automatically retries connection
     };
 
     return () => {
@@ -234,18 +260,26 @@ export const aiApi = {
 
   listSessions: (workspaceId: string) =>
     request<Array<{ id: string; title: string | null; createdAt: string }>>(
-      `/ai/sessions/${workspaceId}`,
+      `/ai/workspaces/${workspaceId}/sessions`,
     ),
 
   createSession: (body: {
     workspaceId: string;
-    userId: string;
+    userId?: string;
     modelId?: string;
     title?: string;
   }) => request<{ id: string; title: string | null; createdAt: string }>(
     '/ai/sessions',
     { method: 'POST', body: JSON.stringify(body) },
   ),
+
+  deleteSession: (sessionId: string) =>
+    request<{ success: boolean }>(`/ai/sessions/${sessionId}`, { method: 'DELETE' }),
+
+  getSessionMessages: (sessionId: string) =>
+    request<Array<{ id: string; role: string; content: string; createdAt: string }>>(
+      `/ai/sessions/${sessionId}/messages`,
+    ),
 
   chat: (body: {
     sessionId: string;

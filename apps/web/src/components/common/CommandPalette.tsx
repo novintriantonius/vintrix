@@ -91,7 +91,7 @@ export function CommandPalette({
     {
       id: 'nav-chat',
       category: 'navigation',
-      title: 'Open AI Codebase Copilot',
+      title: 'Open AI Assistant',
       subtitle: 'Ask contextual architecture questions with LLM',
       icon: <ChatCircleText className="w-4 h-4 text-purple-400" />,
       badge: 'View',

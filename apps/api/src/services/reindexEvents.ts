@@ -7,8 +7,15 @@ export interface ReindexEvent {
   workspaceId: string;
   message: string;
   progressPercent?: number;
+  currentFileIndex?: number;
+  totalFiles?: number;
+  currentFileName?: string;
+  totalFilesIndexed?: number;
   nodesScanned?: number;
   edgesScanned?: number;
+  // Full graph payload for DB-less environments
+  graphNodes?: any[];
+  graphEdges?: any[];
   timestamp: string;
 }
 
