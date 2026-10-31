@@ -9,6 +9,12 @@
 [![React](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178c6.svg)](https://www.typescriptlang.org)
 
+<br />
+
+<img src="./apps/web/src/assets/landing/hero.png" alt="Vintrix Architecture Intelligence Preview" width="100%" />
+
+<br />
+
 **Vintrix** transforms complex, multi-repository and monolithic codebases into interactive, queryable **Knowledge Graphs**. Built on high-performance AST parsing, hybrid BM25 + Vector retrieval, and an intuitive graph canvas interface, Vintrix enables engineering teams to understand architecture, navigate dependencies, and interrogate codebases with LLM-powered context awareness.
 
 [Key Features](#-key-features) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [Deployment](#-deployment) • [Security & Privacy](#-security--privacy)

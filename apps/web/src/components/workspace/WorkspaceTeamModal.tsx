@@ -26,7 +26,7 @@ export interface WorkspaceMember {
 export const INITIAL_WORKSPACE_MEMBERS: WorkspaceMember[] = [
   {
     userId: 'user-1',
-    name: 'Novin Tri Antonius',
+    name: 'Novin Triantonius',
     email: 'novin@vintrix.io',
     roleName: 'owner',
     invitedAt: '3 days ago',
