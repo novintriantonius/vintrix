@@ -606,17 +606,44 @@ export function scanSourceFile(filePath: string, rootDir: string): ScannedFileDe
 }
 
 /**
- * Supported file extensions for full codebase architecture indexing
+ * Check if a file appears to be a readable text file (not binary)
  */
-const SUPPORTED_EXTENSIONS = new Set([
-  // JavaScript & TypeScript
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
-  // Backend & Systems
-  '.py', '.go', '.rs', '.java', '.kt', '.c', '.cpp', '.h', '.hpp', '.cs', '.php', '.rb',
-  // Web & UI
-  '.html', '.css', '.scss', '.vue', '.svelte',
-  // Configuration, Schemas & Scripts
-  '.json', '.yaml', '.yml', '.toml', '.sql', '.sh', '.env.example', '.md'
+export function isTextFile(filePath: string): boolean {
+  try {
+    const stat = fs.statSync(filePath);
+    // Skip empty files or files larger than 10MB to prevent memory exhaustion
+    if (stat.size === 0 || stat.size > 10 * 1024 * 1024) return false;
+
+    const fd = fs.openSync(filePath, 'r');
+    const buffer = Buffer.alloc(Math.min(stat.size, 1024));
+    const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    fs.closeSync(fd);
+
+    if (bytesRead === 0) return false;
+
+    // Check for null bytes which indicate binary data
+    for (let i = 0; i < bytesRead; i++) {
+      if (buffer[i] === 0) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Known binary file extensions to skip proactively for efficiency
+ */
+const KNOWN_BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.svgz', '.bmp', '.tiff',
+  '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv',
+  '.mp3', '.wav', '.ogg', '.flac', '.aac',
+  '.pdf', '.zip', '.tar', '.gz', '.tgz', '.bz2', '.7z', '.rar',
+  '.exe', '.bin', '.dll', '.so', '.dylib', '.o', '.a', '.class', '.pyc', '.wasm',
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+  '.dmg', '.iso', '.jar', '.apk', '.ipk'
 ]);
 
 export function findCodeFiles(dir: string, baseDir = dir): string[] {
@@ -684,12 +711,17 @@ export function findCodeFiles(dir: string, baseDir = dir): string[] {
       }
       results = results.concat(findCodeFiles(fullPath, baseDir));
     } else if (entry.isFile()) {
+      if (entry.name.endsWith('.d.ts')) {
+        continue;
+      }
+
       const ext = path.extname(entry.name).toLowerCase();
-      const isNamedConfigFile =
-        entry.name.startsWith('Dockerfile') ||
-        entry.name.startsWith('Makefile') ||
-        entry.name === '.env.example';
-      if ((SUPPORTED_EXTENSIONS.has(ext) && !entry.name.endsWith('.d.ts')) || isNamedConfigFile) {
+      if (KNOWN_BINARY_EXTENSIONS.has(ext)) {
+        continue;
+      }
+
+      // Without extension limitations: index if it is a readable text file
+      if (isTextFile(fullPath)) {
         results.push(fullPath);
       }
     }

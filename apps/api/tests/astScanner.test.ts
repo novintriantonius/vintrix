@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { scanSourceFile, findCodeFiles } from '../src/services/astScanner';
+import { scanSourceFile, findCodeFiles, isTextFile } from '../src/services/astScanner';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -175,6 +175,33 @@ class UserController {
     expect(result.nodes.length).toBeGreaterThan(0);
     expect(result.nodes[0].label).toBeDefined();
     expect(progressCalls).toBeGreaterThan(0);
+  });
+
+  it('indexes readable files without extension restrictions and excludes binary files', () => {
+    const scanDir = path.join(tmpDir, 'unlimited-ext-test');
+    fs.mkdirSync(scanDir, { recursive: true });
+
+    // Custom extension or extension-less readable text files
+    fs.writeFileSync(path.join(scanDir, 'CustomScript.customext'), 'echo "running custom config"');
+    fs.writeFileSync(path.join(scanDir, 'Procfile'), 'web: bun src/index.ts');
+    fs.writeFileSync(path.join(scanDir, 'LICENSE'), 'MIT License Copyright 2026');
+
+    // Binary file simulation with null byte
+    const binaryBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]);
+    fs.writeFileSync(path.join(scanDir, 'logo.png'), binaryBuffer);
+    fs.writeFileSync(path.join(scanDir, 'binary_blob.dat'), binaryBuffer);
+
+    const indexedFiles = findCodeFiles(scanDir);
+    const basenames = indexedFiles.map((f) => path.basename(f));
+
+    expect(basenames).toContain('CustomScript.customext');
+    expect(basenames).toContain('Procfile');
+    expect(basenames).toContain('LICENSE');
+    expect(basenames).not.toContain('logo.png');
+    expect(basenames).not.toContain('binary_blob.dat');
+
+    expect(isTextFile(path.join(scanDir, 'Procfile'))).toBeTrue();
+    expect(isTextFile(path.join(scanDir, 'binary_blob.dat'))).toBeFalse();
   });
 
   it('filters out confidential credentials and hidden ignored files in findCodeFiles', () => {
